@@ -1,0 +1,10 @@
+http:
+  addr: "127.0.0.1:8080"
+
+processes:
+  - name: web-api
+    cmd: "python3"
+    args: ["-m", "http.server","8090"]
+    log_dir: "/var/log/procd"
+    autorestart: true
+    restart_delay_secs: 3
