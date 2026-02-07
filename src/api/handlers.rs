@@ -1,16 +1,21 @@
 use axum::{
-    Json,
+    Json, Router,
     extract::{self, Extension},
-    response,
-};
-use axum::{
-    Router,
+    middleware, response,
     routing::{get, post},
 };
+
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
+use crate::api::auth::basic_auth;
 use crate::process::registry::{ControlMsg, ProcState, ProcessOut, Registry};
+
+const INDEX_HTML: &str = include_str!("asset/index.html");
+
+async fn index() -> response::Html<&'static str> {
+    response::Html(INDEX_HTML)
+}
 
 async fn list_processes(Extension(reg): Extension<Arc<Registry>>) -> Json<Vec<ProcessOut>> {
     Json(reg.list())
@@ -42,10 +47,11 @@ async fn restart_process(
     }
 }
 
-pub fn build_router(registry: Arc<Registry>) -> Router {
+pub fn build_router() -> Router {
     Router::new()
+        .route("/", get(index))
         .route("/api/processes", get(list_processes))
         .route("/api/process/{name}/restart", post(restart_process))
-        .layer(Extension(registry))
+        .layer(middleware::from_fn(basic_auth))
         .layer(TraceLayer::new_for_http())
 }

@@ -19,6 +19,7 @@ nix = {version="0.31.1", features = ["signal", "process"] }
 windows-sys = "0.61.2"
 config = "0.15.19"
 clap = { version = "4.5.57", features = ["derive"] }
+base64 = "0.22.1"
 
 
 [profile.release]

@@ -44,8 +44,12 @@ async fn main() {
         tokio::spawn(process::supervisor::supervise(process_cfg, reg));
     }
 
+    let cfg_arc = Arc::new(cfg.clone());
+
     // Set up web API
-    let app = api::handlers::build_router(reg.clone());
+    let app = api::handlers::build_router()
+        .layer(axum::Extension(reg.clone()))
+        .layer(axum::Extension(cfg_arc));
 
     tracing::info!("Listening on {}", cfg.http.addr);
 

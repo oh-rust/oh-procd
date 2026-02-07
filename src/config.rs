@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use tokio::time::Duration;
 
@@ -11,11 +12,27 @@ pub struct Config {
 
     #[serde(default)]
     pub log_dir: String,
+
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HttpConfig {
     pub addr: String,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct AuthConfig {
+    pub username: String,
+    pub password: String,
+}
+
+impl AuthConfig {
+    pub fn check(&self, name: &str, psw: &str) -> bool {
+        return self.username == name && self.password == psw;
+    }
 }
 
 #[derive(Serialize, Debug, Deserialize, Clone)]

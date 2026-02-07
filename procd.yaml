@@ -1,6 +1,11 @@
 http:
   addr: "127.0.0.1:8080"
 
+# 可选配置，认证账号
+auth:
+  username: admin
+  password: 123
+
 processes:
   - name: web-api
     cmd: "python3"

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Oh Procd</title>
+
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 20px;
+            background: #fafafa;
+        }
+
+        h1 {
+            margin-bottom: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e5e5;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: #f9f9f9;
+        }
+
+        td code {
+            white-space: nowrap;
+            max-width: 420px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        button {
+            padding: 6px 10px;
+            font-size: 13px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background: #fff;
+        }
+
+        button:hover {
+            background: #eee;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        /* ---- state colors ---- */
+        .state-running { color: #16a34a; font-weight: 600; }
+        .state-starting { color: #2563eb; }
+        .state-stopped { color: #6b7280; }
+        .state-backoff { color: #f59e0b; }
+        .state-exited { color: #dc2626; }
+
+        .footer {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Process List</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>PID</th>
+            <th>State</th>
+            <th>Command</th>
+            <th>Start Time</th>
+            <th>Start Count</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody id="process-table"></tbody>
+</table>
+
+<div class="footer">
+    Auto refresh every 3 seconds
+</div>
+
+<script>
+function formatCommand(cmd) {
+    if (!cmd || !cmd.cmd) return "-";
+    const args = (cmd.args || []).join(" ");
+    return cmd.cmd + (args ? " " + args : "");
+}
+
+function stateToClass(state) {
+    if (!state) return "";
+    if (state.startsWith("Exited")) return "state-exited";
+    return "state-" + state.toLowerCase();
+}
+
+function canRestart(state) {
+    return state !== "Starting";
+}
+
+async function loadProcesses() {
+    try {
+        const res = await fetch("/api/processes");
+        const processes = await res.json();
+
+        const tbody = document.getElementById("process-table");
+        tbody.innerHTML = "";
+
+        processes.forEach(p => {
+            const tr = document.createElement("tr");
+
+            const cmdText = formatCommand(p.cmd);
+            const stateClass = stateToClass(p.state);
+
+            tr.innerHTML = `
+                <td>${p.name}</td>
+                <td>${p.pid || "-"}</td>
+                <td class="${stateClass}">${p.state}</td>
+                <td title="${cmdText}">
+                    <code>${cmdText}</code>
+                </td>
+                <td>${p.start_time || "-"}</td>
+                <td>${p.start_count}</td>
+                <td>
+                    <button
+                        onclick="restartProcess('${p.name}')"
+                        ${canRestart(p.state) ? "" : "disabled"}
+                    >
+                        Restart
+                    </button>
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        console.error("loadProcesses failed:", err);
+    }
+}
+
+async function restartProcess(name) {
+    if (!confirm(`Restart process "${name}"?`)) {
+        return;
+    }
+
+    try {
+        await fetch(`/api/process/${name}/restart`, {
+            method: "POST"
+        });
+        loadProcesses();
+    } catch (err) {
+        alert("Restart failed");
+    }
+}
+
+// initial load
+loadProcesses();
+
+// auto refresh
+setInterval(loadProcesses, 3000);
+</script>
+
+</body>
+</html>
