@@ -3,15 +3,20 @@ use axum::{
     extract::{self, Extension},
     response,
 };
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use std::sync::Arc;
+use tower_http::trace::TraceLayer;
 
 use crate::process::registry::{ControlMsg, ProcState, ProcessOut, Registry};
 
-pub async fn list_processes(Extension(reg): Extension<Arc<Registry>>) -> Json<Vec<ProcessOut>> {
+async fn list_processes(Extension(reg): Extension<Arc<Registry>>) -> Json<Vec<ProcessOut>> {
     Json(reg.list())
 }
 
-pub async fn restart_process(
+async fn restart_process(
     Extension(reg): Extension<Arc<Registry>>,
     extract::Path(name): extract::Path<String>,
 ) -> impl response::IntoResponse {
@@ -35,4 +40,12 @@ pub async fn restart_process(
         }
         None => (axum::http::StatusCode::NOT_FOUND, "process not found"),
     }
+}
+
+pub fn build_router(registry: Arc<Registry>) -> Router {
+    Router::new()
+        .route("/api/processes", get(list_processes))
+        .route("/api/process/{name}/restart", post(restart_process))
+        .layer(Extension(registry))
+        .layer(TraceLayer::new_for_http())
 }

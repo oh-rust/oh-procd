@@ -8,7 +8,7 @@ use std::{
 use crate::config::ProcessConfig;
 
 fn current_hour() -> String {
-    Local::now().format("%Y%m%d-%H").to_string()
+    Local::now().format("%Y%m%d%H").to_string()
 }
 
 pub fn pipe_logger(
@@ -37,8 +37,8 @@ pub fn pipe_logger(
                 match fs::create_dir_all(dir) {
                     Ok(()) => {}
                     Err(e) => {
-                        tracing::warn!("create log_dir_all {:?}", e.to_string());
-                        break;
+                        tracing::warn!("create log_dir({:?}) {:?}", dir, e.to_string());
+                        continue;
                     }
                 }
             }
@@ -56,7 +56,10 @@ pub fn pipe_logger(
                     .append(true)
                     .open(Path::new(&path))
                 {
-                    Ok(f) => file = Some(f),
+                    Ok(f) => {
+                        file = Some(f);
+                        tracing::info!("open_log {:?}", &path);
+                    }
                     Err(e) => {
                         tracing::warn!("open_log failed {:?}", e);
                     }

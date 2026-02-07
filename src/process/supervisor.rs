@@ -46,9 +46,11 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         cmd.current_dir(&cfg.home);
     }
 
-    if cfg.redirect_output {
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    }
+    //if cfg.redirect_output {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    //}
+
+    let pid: u32;
 
     let mut child = match cmd.spawn() {
         Result::Ok(child) => {
@@ -58,6 +60,7 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
                 cmd,
                 child.id()
             );
+            pid = child.id();
             child
         }
         Result::Err(e) => {
@@ -75,9 +78,43 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         if let Some(stderr) = child.stderr.take() {
             pipe_logger(stderr, cfg.clone(), "err");
         }
+    } else {
+        if let Some(stdout) = child.stdout.take() {
+            let name = cfg.name.clone();
+            print_with_prefix(stdout, move |line| {
+                eprintln!("[{}/{}] {}", name.clone(), pid, line)
+            });
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            let name = cfg.name.clone();
+            print_with_prefix(stderr, move |line| {
+                println!("[{}/{}] {}", name.clone(), pid, line)
+            });
+        }
     }
 
     Ok(child)
+}
+
+fn print_with_prefix(
+    mut reader: impl std::io::Read + Send + 'static,
+    output: impl Fn(&str) + Send + 'static,
+) {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break, // EOF
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            let s = String::from_utf8_lossy(&buf[..n]);
+            for line in s.lines() {
+                output(line);
+            }
+        }
+    });
 }
 
 pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
