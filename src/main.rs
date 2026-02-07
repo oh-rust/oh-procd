@@ -47,7 +47,7 @@ fn kill_process(pid: u32) {
 pub struct Config {
     pub http: HttpConfig,
     pub processes: Vec<ProcessConfig>,
-    pub home :String,
+    pub home: String,
     pub log_dir: String,
 }
 
@@ -62,7 +62,7 @@ pub struct ProcessConfig {
     pub cmd: String,
     pub args: Vec<String>,
     pub envs: Vec<String>, // 额外的环境变量值
-    pub home: String, // 进程根目录
+    pub home: String,      // 进程根目录
 
     pub redirect_output: bool,     // 是否重定向 stdout 和 stderr 到日志
     pub output_dir: String,        // 单独的输出目录
@@ -262,7 +262,7 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
             cmd.env(key, value);
         }
     }
-    if !cfg.home.is_empty(){
+    if !cfg.home.is_empty() {
         cmd.current_dir(&cfg.home);
     }
 
@@ -272,12 +272,19 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
 
     let mut child = match cmd.spawn() {
         Result::Ok(child) => {
-            tracing::info!("spawn_process {} [ {:?} ] with pid {}",cfg.name.clone(), cmd, child.id());
+            tracing::info!(
+                "spawn_process {} [ {:?} ] with pid {}",
+                cfg.name.clone(),
+                cmd,
+                child.id()
+            );
             child
         }
         Result::Err(e) => {
-            tracing::error!("spawn_process {} [ {:?} ] faild",cfg.name.clone(), cmd);
-            return Err(anyhow::Error::new(e).context( format!("spawn_process {} failed",cfg.name.clone())));
+            tracing::error!("spawn_process {} [ {:?} ] faild", cfg.name.clone(), cmd);
+            return Err(
+                anyhow::Error::new(e).context(format!("spawn_process {} failed", cfg.name.clone()))
+            );
         }
     };
 
@@ -297,62 +304,64 @@ fn current_hour() -> String {
     Local::now().format("%Y%m%d-%H").to_string()
 }
 
-fn pipe_logger( mut reader: impl std::io::Read + Send + 'static, cfg: ProcessConfig,kind: &'static str,) {
+fn pipe_logger(
+    mut reader: impl std::io::Read + Send + 'static,
+    cfg: ProcessConfig,
+    kind: &'static str,
+) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
-
 
         let mut file: Option<std::fs::File> = None;
         let mut active_hour = current_hour();
 
         loop {
-           let n= match  reader.read(&mut buf){
-                Ok(0)=>break, //  EOF
-                Ok(n)=>n,
-                Err(e)=>{
-                     tracing::warn!("read pipe failed: {:?}", e);
-                     break;
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break, //  EOF
+                Ok(n) => n,
+                Err(e) => {
+                    tracing::warn!("read pipe failed: {:?}", e);
+                    break;
                 }
             };
 
-            let dir=Path::new(&cfg.output_dir);
-            if !dir.exists(){
+            let dir = Path::new(&cfg.output_dir);
+            if !dir.exists() {
                 match fs::create_dir_all(dir) {
-                   Ok(())=>{},
-                   Err(e)=>{
-                      tracing::warn!("create log_dir_all {:?}",e.to_string());
-                     break;
-                   } 
+                    Ok(()) => {}
+                    Err(e) => {
+                        tracing::warn!("create log_dir_all {:?}", e.to_string());
+                        break;
+                    }
                 }
             }
 
             let hour = current_hour();
             let path = dir.join(format!("{kind}.{hour}.log"));
             let need_rotate = hour != active_hour;
-            active_hour=hour;
-        
+            active_hour = hour;
 
-            let missing= fs::metadata(&path).is_err();
-    
-            
-            if missing|| need_rotate|| file.is_none(){
-                match  OpenOptions::new().create(true).append(true).open(Path::new(&path)){
-                    Ok(f) => {
-                        file=Some(f)
-                    },
+            let missing = fs::metadata(&path).is_err();
+
+            if missing || need_rotate || file.is_none() {
+                match OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(Path::new(&path))
+                {
+                    Ok(f) => file = Some(f),
                     Err(e) => {
-                        tracing::warn!("open_log failed {:?}",e);
+                        tracing::warn!("open_log failed {:?}", e);
                     }
                 };
             }
 
-             if let Some(f) = file.as_mut() {
+            if let Some(f) = file.as_mut() {
                 if let Err(e) = f.write_all(&buf[..n]) {
                     tracing::warn!("write log failed: {:?}", e);
                     file = None
                 }
             }
-        
         }
     });
 }
@@ -399,7 +408,7 @@ async fn main() {
         http: HttpConfig {
             addr: "127.0.0.1:8080".to_string(),
         },
-        home:"/var/".to_string(),
+        home: "/var/".to_string(),
         log_dir: "/var/log/procd".to_string(),
         processes: vec![ProcessConfig {
             name: "web-api".to_string(),
@@ -411,7 +420,7 @@ async fn main() {
             ],
             envs: vec![],
             output_dir: "".to_string(),
-            home:"".to_string(),
+            home: "".to_string(),
             redirect_output: true,
             max_run: None,
         }],
@@ -424,8 +433,8 @@ async fn main() {
             pc.output_dir = path.to_string_lossy().to_string()
         }
 
-        if pc.home.is_empty(){
-            pc.home=config.home.clone();
+        if pc.home.is_empty() {
+            pc.home = config.home.clone();
         }
     }
 
