@@ -1,9 +1,6 @@
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use tokio::{
-    sync::mpsc,
-    time::{Duration, sleep},
-};
+use tokio::{sync::mpsc, time::Duration};
 
 use crate::{
     config::ProcessConfig,
@@ -46,9 +43,7 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         cmd.current_dir(&cfg.home);
     }
 
-    //if cfg.redirect_output {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    //}
 
     let pid: u32;
 
@@ -115,8 +110,15 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
     loop {
         let start_time = tokio::time::Instant::now();
 
-        let child = spawn_process(&cfg).unwrap();
-
+        let child = match spawn_process(&cfg) {
+            Ok(c) => c,
+            Err(_e) => {
+                registry.set_state(&cfg.name, ProcState::Error);
+                // 若启动失败，则等待 1 秒后重试
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+        };
         let pid = child.id();
         registry.set_running(&cfg.name, pid);
         tracing::info!("{} running with pid {}", cfg.name, pid);
@@ -131,7 +133,7 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
             let _ = exit_tx.send(code);
         });
 
-        // 如果 cfg.max_run_time 有值，创建超时 future
+        // 如果 cfg.max_run 有值，创建超时 future
         let max_run_fut = if let Some(max_time) = cfg.max_run {
             tokio::time::sleep(max_time)
         } else {
@@ -172,7 +174,7 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
         let elapsed = start_time.elapsed();
         if elapsed < Duration::from_secs(1) {
             // 进程存活小于 1 秒 → sleep 1 秒
-            sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 }

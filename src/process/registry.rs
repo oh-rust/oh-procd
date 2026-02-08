@@ -8,6 +8,7 @@ use crate::config::ProcessConfig;
 #[derive(Serialize, Clone, Debug)]
 pub enum ProcState {
     Ready,
+    Error, // 启动失败
     Running,
     Stopped,
     Exited(i32),
@@ -22,8 +23,8 @@ pub struct ProcessEntry {
     pub cmd: ProcessConfig,
     pub pid: Option<u32>,
     pub control_tx: mpsc::Sender<ControlMsg>,
-    pub start_time: Option<DateTime<Local>>,
-    pub start_count: u64,
+    pub start_time: Option<DateTime<Local>>, // 进程启动时间
+    pub start_count: u64,                    // 程序启动次数
 }
 
 pub struct Registry {

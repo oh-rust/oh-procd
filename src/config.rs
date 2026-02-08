@@ -6,20 +6,24 @@ use tokio::time::Duration;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    pub http: HttpConfig,
-    pub processes: Vec<ProcessConfig>,
+    pub http: HttpConfig, // web server 配置
+
+    pub processes: Vec<ProcessConfig>, // 子进程配置列表
 
     #[serde(default)]
-    pub home: String,
+    pub home: String, // 默认的工作目录
 
     #[serde(default)]
-    pub log_dir: String,
+    pub log_dir: String, // 日志目录
 
     #[serde(default)]
-    pub auth: AuthConfig,
+    pub auth: AuthConfig, // web 页面认证信息
 
     #[serde(default)]
-    pub envs: Vec<String>,
+    pub envs: Vec<String>, // 传递给子进程的环境变量配置
+
+    #[serde(default, with = "humantime_serde::option")]
+    pub restart_on_change: Option<Duration>, // 文件变化后，延迟重启的时间间隔
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -60,6 +64,9 @@ pub struct ProcessConfig {
 
     #[serde(default, with = "humantime_serde::option")]
     pub max_run: Option<Duration>, // 最大运行时长，秒数，配置文件配置值 "10s"、"1h30m"
+
+    #[serde(default, with = "humantime_serde::option")]
+    pub restart_on_change: Option<Duration>, // 文件变化后，延迟重启的时间间隔
 }
 
 impl Config {
@@ -82,6 +89,10 @@ impl Config {
 
             if pc.home.is_empty() {
                 pc.home = self.home.clone();
+            }
+
+            if !self.restart_on_change.is_none() && pc.restart_on_change.is_none() {
+                pc.restart_on_change = self.restart_on_change.clone();
             }
         }
     }
