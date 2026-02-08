@@ -11,11 +11,7 @@ fn current_hour() -> String {
     Local::now().format("%Y%m%d%H").to_string()
 }
 
-pub fn pipe_logger(
-    mut reader: impl std::io::Read + Send + 'static,
-    cfg: ProcessConfig,
-    kind: &'static str,
-) {
+pub fn pipe_logger(mut reader: impl std::io::Read + Send + 'static, cfg: ProcessConfig, kind: &'static str) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
 
@@ -51,11 +47,7 @@ pub fn pipe_logger(
             let missing = fs::metadata(&path).is_err();
 
             if missing || need_rotate || file.is_none() {
-                match OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(Path::new(&path))
-                {
+                match OpenOptions::new().create(true).append(true).open(Path::new(&path)) {
                     Ok(f) => {
                         file = Some(f);
                         tracing::info!("open_log {:?}", &path);

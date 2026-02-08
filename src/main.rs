@@ -2,7 +2,7 @@ mod api;
 mod config;
 mod process;
 
-use std::sync::Arc;
+use std::{env, sync::Arc};
 use tracing;
 use tracing_subscriber::EnvFilter;
 
@@ -10,8 +10,7 @@ use crate::process::registry;
 use clap::Parser;
 
 fn init_tracing() {
-    let log_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
+    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
 
     tracing_subscriber::fmt().with_env_filter(log_filter).init();
     tracing::info!("starting ...");
@@ -33,9 +32,20 @@ async fn main() {
     let cfg_path = args.config.as_str();
     tracing::info!("using config {}", cfg_path);
 
-    let mut cfg = config::Config::from_file(cfg_path).unwrap();
+    let cfg = config::Config::from_file(cfg_path).unwrap();
 
-    cfg.check_and_init();
+    let home = cfg.home.clone();
+    if !home.is_empty() {
+        if let Err(e) = env::set_current_dir(home.clone()) {
+            tracing::warn!("set_current_dir({:?}) failed: {:?}", home, e);
+            std::process::exit(1);
+        }
+    }
+
+    match env::current_dir() {
+        Ok(dir) => tracing::info!("current_dir: {}", dir.display()),
+        Err(e) => tracing::warn!("get current_dir failed: {}", e),
+    }
 
     let reg = Arc::new(registry::Registry::new());
     // Spawn processes

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use tokio::time::Duration;
@@ -15,6 +17,9 @@ pub struct Config {
 
     #[serde(default)]
     pub auth: AuthConfig,
+
+    #[serde(default)]
+    pub envs: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -53,16 +58,22 @@ pub struct ProcessConfig {
     #[serde(default)]
     pub output_dir: String, // 单独的输出目录
 
-    #[serde(default)]
-    pub max_run: Option<Duration>, // 最大运行时长，秒数
+    #[serde(default, with = "humantime_serde::option")]
+    pub max_run: Option<Duration>, // 最大运行时长，秒数，配置文件配置值 "10s"、"1h30m"
 }
 
 impl Config {
-    pub fn check_and_init(&mut self) {
+    fn check_and_init(&mut self) {
         if self.log_dir.is_empty() {
             self.log_dir = "logs".to_string()
         }
+
         for pc in self.processes.iter_mut() {
+            // 合并全局的环境变量
+            let mut merged = self.envs.clone();
+            merged.extend(pc.envs.clone());
+            pc.envs = merged;
+
             if pc.output_dir.is_empty() {
                 let mut path = std::path::PathBuf::from(&self.log_dir);
                 path.push(&pc.name);
@@ -81,7 +92,16 @@ impl Config {
             .build()?;
 
         // 3. 转换成 struct
-        let cfg: Config = settings.try_deserialize()?;
+        let mut cfg: Config = settings.try_deserialize()?;
+
+        if cfg.home.is_empty() {
+            let fp = Path::new(path);
+            cfg.home = fp
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .ok_or_else(|| anyhow::anyhow!("invalid path: no parent directory"))?;
+        }
+        cfg.check_and_init();
         Ok(cfg)
     }
 }

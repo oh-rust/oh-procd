@@ -64,18 +64,14 @@ impl Registry {
     }
 
     pub fn get_control(&self, name: &str) -> Option<tokio::sync::mpsc::Sender<ControlMsg>> {
-        self.inner
-            .lock()
-            .unwrap()
-            .get(name)
-            .map(|e| e.control_tx.clone())
+        self.inner.lock().unwrap().get(name).map(|e| e.control_tx.clone())
     }
 
     pub fn set_state(&self, name: &str, state: ProcState) {
         let mut registry = self.inner.lock().unwrap();
         if let Some(entry) = registry.get_mut(name) {
-            entry.state = state;
-            tracing::info!("set_state {} ", name);
+            entry.state = state.clone();
+            tracing::info!("set_state {} -> ({:?}, {:?})", name, state, entry.pid.unwrap_or(0));
         } else {
             panic!("set_state {} not found", name);
         }
@@ -86,12 +82,7 @@ impl Registry {
         if let Some(entry) = registry.get_mut(name) {
             entry.state = ProcState::Running;
             entry.pid = Some(pid);
-            tracing::info!(
-                "set_running {} -> ( {:?}, {:?} )",
-                name,
-                ProcState::Running,
-                pid
-            );
+            tracing::info!("set_state {} -> ({:?}, {:?})", name, ProcState::Running, pid);
             entry.start_time = Some(Local::now());
             entry.start_count += 1;
         } else {
@@ -104,9 +95,7 @@ impl Registry {
         registry
             .iter()
             .map(|(k, v)| {
-                let start_time_str = v
-                    .start_time
-                    .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
+                let start_time_str = v.start_time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
                 ProcessOut {
                     name: k.clone(),
                     state: v.state.clone(),

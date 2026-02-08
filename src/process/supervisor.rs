@@ -65,9 +65,7 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         }
         Result::Err(e) => {
             tracing::error!("spawn_process {} [ {:?} ] faild", cfg.name.clone(), cmd);
-            return Err(
-                anyhow::Error::new(e).context(format!("spawn_process {} failed", cfg.name.clone()))
-            );
+            return Err(anyhow::Error::new(e).context(format!("spawn_process {} failed", cfg.name.clone())));
         }
     };
 
@@ -81,26 +79,19 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     } else {
         if let Some(stdout) = child.stdout.take() {
             let name = cfg.name.clone();
-            print_with_prefix(stdout, move |line| {
-                eprintln!("[{}/{}] {}", name.clone(), pid, line)
-            });
+            print_with_prefix(stdout, move |line| eprintln!("[{}/{}] {}", name.clone(), pid, line));
         }
 
         if let Some(stderr) = child.stderr.take() {
             let name = cfg.name.clone();
-            print_with_prefix(stderr, move |line| {
-                println!("[{}/{}] {}", name.clone(), pid, line)
-            });
+            print_with_prefix(stderr, move |line| println!("[{}/{}] {}", name.clone(), pid, line));
         }
     }
 
     Ok(child)
 }
 
-fn print_with_prefix(
-    mut reader: impl std::io::Read + Send + 'static,
-    output: impl Fn(&str) + Send + 'static,
-) {
+fn print_with_prefix(mut reader: impl std::io::Read + Send + 'static, output: impl Fn(&str) + Send + 'static) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
@@ -170,7 +161,8 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
 
                  // 达到最大运行时长
             _ = max_run_fut => {
-                tracing::info!("{} reached max_run_time, killing process", cfg.name);
+                let elapsed = start_time.elapsed();
+                tracing::info!("{} reached max_run_time (live={:?}), killing process", cfg.name,elapsed);
                 kill_process(pid);
                 registry.set_state(&cfg.name, ProcState::Stopped);
             }
