@@ -1,20 +1,20 @@
 mod api;
 mod config;
+mod logger;
 mod process;
 
 use std::{env, sync::Arc};
 use tracing;
-use tracing_subscriber::EnvFilter;
 
 use crate::process::registry;
 use clap::Parser;
 
-fn init_tracing() {
-    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
+// fn init_tracing() {
+//     let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
 
-    tracing_subscriber::fmt().with_env_filter(log_filter).init();
-    tracing::info!("starting ...");
-}
+//     tracing_subscriber::fmt().with_env_filter(log_filter).init();
+//     tracing::info!("starting ...");
+// }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -26,7 +26,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    init_tracing();
+    let log_buf = logger::new_logbuf();
+
+    // init_tracing();
+
+    tracing::info!("starting ...");
 
     let args = Args::parse();
     let cfg_path = args.config.as_str();
@@ -59,7 +63,8 @@ async fn main() {
     // Set up web API
     let app = api::handlers::build_router()
         .layer(axum::Extension(reg.clone()))
-        .layer(axum::Extension(cfg_arc));
+        .layer(axum::Extension(cfg_arc))
+        .layer(axum::Extension(log_buf));
 
     tracing::info!("Listening on {}", cfg.http.addr);
 

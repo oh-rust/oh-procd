@@ -31,6 +31,9 @@ fn kill_process(pid: u32) {
     }
 }
 
+#[cfg(target_os = "linux")]
+use std::os::unix::process::CommandExt;
+
 fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     let mut cmd = Command::new(&cfg.cmd);
     cmd.args(&cfg.args);
@@ -41,6 +44,20 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     }
     if !cfg.home.is_empty() {
         cmd.current_dir(&cfg.home);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        unsafe {
+            cmd.pre_exec(|| {
+                // 设置父死信号,父死子死
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+
+                // 将自己加入一个新的进程组,子进程和所有子孙在同一进程组
+                libc::setpgid(0, 0); // 0,0 表示自己作为 leader
+                Ok(())
+            });
+        }
     }
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -74,12 +91,16 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     } else {
         if let Some(stdout) = child.stdout.take() {
             let name = cfg.name.clone();
-            print_with_prefix(stdout, move |line| eprintln!("[{}/{}] {}", name.clone(), pid, line));
+            print_with_prefix(stdout, move |line| {
+                tracing::info!(from = "stdout", pid = pid, name = name.clone(), "{}", line)
+            });
         }
 
         if let Some(stderr) = child.stderr.take() {
             let name = cfg.name.clone();
-            print_with_prefix(stderr, move |line| println!("[{}/{}] {}", name.clone(), pid, line));
+            print_with_prefix(stderr, move |line| {
+                tracing::info!(from = "stderr", pid = pid, name = name.clone(), "{}", line);
+            });
         }
     }
 

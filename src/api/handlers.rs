@@ -47,9 +47,16 @@ async fn restart_process(
     }
 }
 
+async fn logs(Extension(lb): Extension<crate::logger::LogBuffer>) -> Json<Vec<String>> {
+    let mut lines = lb.get_logs();
+    lines.reverse();
+    Json(lines)
+}
+
 pub fn build_router() -> Router {
     Router::new()
         .route("/", get(index))
+        .route("/api/logs", get(logs))
         .route("/api/processes", get(list_processes))
         .route("/api/process/{name}/restart", post(restart_process))
         .layer(middleware::from_fn(basic_auth))

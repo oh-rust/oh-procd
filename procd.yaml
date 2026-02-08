@@ -11,4 +11,4 @@ processes:
     cmd: "python3"
     args: ["-m", "http.server","8090"]
     home: /tmp
-    max_run: "10s"
+    # max_run: "10s"

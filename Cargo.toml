@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 axum = "0.8.8"
 tokio = { version = "1", features = ["full"] }
-serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde = { version = "1.0",  features = ["derive"] }
 serde_yaml = "0.9.33"
 chrono = "0.4"
 tracing-appender = "0.2.4"
@@ -21,6 +21,7 @@ config = "0.15.19"
 clap = { version = "4.5.57", features = ["derive"] }
 base64 = "0.22.1"
 humantime-serde = "1.1.1"
+libc = "0.2.180"
 
 
 [profile.release]

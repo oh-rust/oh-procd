@@ -58,6 +58,9 @@ pub fn pipe_logger(mut reader: impl std::io::Read + Send + 'static, cfg: Process
                 };
             }
 
+            // 额外将重定向的内容输出到 tracing 统一的日志
+            tracing::info!(from = kind, name = cfg.name.clone(), "{:?}", &buf[..n]);
+
             if let Some(f) = file.as_mut() {
                 if let Err(e) = f.write_all(&buf[..n]) {
                     tracing::warn!("write log failed: {:?}", e);
