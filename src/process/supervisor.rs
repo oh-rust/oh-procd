@@ -12,6 +12,10 @@ use crate::{
 
 #[cfg(unix)]
 use nix::sys::signal::{Signal, kill};
+
+#[cfg(unix)]
+use nix::sys::resource::{Resource, rlim_t, setrlimit};
+
 #[cfg(unix)]
 use nix::unistd::Pid;
 
@@ -39,26 +43,6 @@ fn kill_process(pid: u32) {
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
-
-#[cfg(target_os = "linux")]
-const MEMORY_RESOURCE: libc::__rlimit_resource_t = libc::RLIMIT_AS;
-
-#[cfg(target_os = "macos")]
-const MEMORY_RESOURCE: libc::__rlimit_resource_t = libc::RLIMIT_DATA;
-
-#[cfg(unix)]
-fn set_rlimit(resource: libc::__rlimit_resource_t, limit: u64) -> std::io::Result<()> {
-    let rlim = libc::rlimit {
-        rlim_cur: limit,
-        rlim_max: limit,
-    };
-
-    if unsafe { libc::setrlimit(resource, &rlim) } == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
 
 fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     let mut cmd = Command::new(&pcfg.cmd);
@@ -91,8 +75,9 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
                 {
                     // 限制内存大小
                     if mem_limit > 0 {
-                        let bytes = mem_limit * 1024 * 1024;
-                        set_rlimit(MEMORY_RESOURCE, bytes as u64)?;
+                        let bytes: rlim_t = (mem_limit * 1024 * 1024) as u64;
+                        setrlimit(Resource::RLIMIT_AS, bytes, bytes)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     }
                 }
 

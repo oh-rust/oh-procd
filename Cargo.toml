@@ -15,7 +15,7 @@ anyhow = "1.0.101"
 tower-http = {version = "0.6.8", features = ["trace"]}
 tracing = "0.1.44"
 tracing-subscriber = {version="0.3.22", features=["env-filter"]}
-nix = {version="0.31.1", features = ["signal", "process"] }
+nix = {version="0.31.1", features = ["signal", "process","resource"] }
 windows-sys = "0.61.2"
 config = "0.15.19"
 clap = { version = "4.5.57", features = ["derive"] }
