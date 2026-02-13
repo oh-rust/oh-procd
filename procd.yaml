@@ -1,5 +1,6 @@
+# 必填配置，管理页面的 http server
 http:
-  addr: "127.0.0.1:8080"
+  addr: "127.0.0.1:8080" 
 
 # 可选配置，认证账号
 # auth:
@@ -11,4 +12,19 @@ processes:
     cmd: "python3"
     args: ["-m", "http.server","8090"]
     home: /tmp
-    # max_run: "10s"
+    # max_run: "10s"  # 最长持续运行时长
+    # next: "30s" # 退出后，下次运行等待时长
+
+  - name: sleep
+    cmd: "sleep"
+    args: ["10"]
+    home: /tmp
+    # max_run: "10s"  # 最长持续运行时长
+    next: "30s" # 退出后，下次运行等待时长
+
+  - name: not-found
+    cmd: "not-found-cmd" # 不存在的命令
+    args: ["10"]
+    home: /tmp
+    # max_run: "10s"  # 最长持续运行时长
+    next: "30s" # 退出后，下次运行等待时长

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,9 @@ pub struct ProcessConfig {
 
     #[serde(default, with = "humantime_serde::option")]
     pub restart_on_change: Option<Duration>, // 文件变化后，延迟重启的时间间隔
+
+    #[serde(default, with = "humantime_serde::option")]
+    pub next: Option<Duration>, // 下一次运行距离上次退出的时间间隔
 }
 
 impl Config {
@@ -114,5 +117,15 @@ impl Config {
         }
         cfg.check_and_init();
         Ok(cfg)
+    }
+}
+
+use crate::process;
+use crate::process::registry::Registry;
+
+impl ProcessConfig {
+    pub fn start_spawn(&self, reg: Arc<Registry>) {
+        let cfg = self.clone();
+        tokio::spawn(process::supervisor::supervise(cfg, reg));
     }
 }

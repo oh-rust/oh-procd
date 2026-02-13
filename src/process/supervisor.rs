@@ -20,13 +20,19 @@ use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess};
 
 #[cfg(unix)]
 fn kill_process(pid: u32) {
+    if pid == 0 {
+        return;
+    }
     let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
 }
 
 #[cfg(windows)]
 fn kill_process(pid: u32) {
+    if pid == 0 {
+        return;
+    }
     unsafe {
-        let handle = OpenProcess(1, 0, pid); // PROCESS_TERMINATE
+        let handle = OpenProcess(1, 0, pid);
         TerminateProcess(handle, 1);
     }
 }
@@ -128,13 +134,20 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
     let (tx, mut rx) = mpsc::channel::<ControlMsg>(8);
     registry.register_process(&cfg.name, cfg.clone(), tx);
 
+    // 如果 cfg.next 有值
+    let wait_next = || async {
+        if let Some(next) = cfg.next {
+            tokio::time::sleep(next).await;
+        }
+    };
+
     loop {
         let start_time = tokio::time::Instant::now();
 
         let child = match spawn_process(&cfg) {
             Ok(c) => c,
-            Err(_e) => {
-                registry.set_state(&cfg.name, ProcState::Error);
+            Err(e) => {
+                registry.set_state(&cfg.name, ProcState::Error(e.to_string()));
                 // 若启动失败，则等待 1 秒后重试
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
@@ -167,34 +180,41 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
             Result::Ok(code) = &mut exit_rx => {
                 registry.set_state(&cfg.name, ProcState::Exited(code));
                 tracing::info!("{} exited with {}", cfg.name, code);
+                wait_next().await;
             }
 
             // 收到控制命令
             Some(cmd) = rx.recv() => {
                 match cmd {
-                    ControlMsg::Kill  => {
-                        tracing::info!("{} received kill", cfg.name);
-
+                    ControlMsg::Restart  => {
+                        tracing::info!("{} received restart", cfg.name);
                         kill_process(pid);
-
                         registry.set_state(&cfg.name, ProcState::Stopped);
+                        // 主动重启的，不需要 wait_next
+                    }
+                    ControlMsg::Kill =>{
+                        tracing::info!("{} received kill", cfg.name);
+                        kill_process(pid);
+                        registry.set_state(&cfg.name, ProcState::Killed);
+                        return   // 主动杀死的，退出循环
                     }
                 }
             }
 
-                 // 达到最大运行时长
+            // 达到最大运行时长
             _ = max_run_fut => {
                 let elapsed = start_time.elapsed();
                 tracing::info!("{} reached max_run_time (live={:?}), killing process", cfg.name,elapsed);
                 kill_process(pid);
                 registry.set_state(&cfg.name, ProcState::Stopped);
+                wait_next().await;
             }
 
         }
 
         let elapsed = start_time.elapsed();
         if elapsed < Duration::from_secs(1) {
-            // 进程存活小于 1 秒 → sleep 1 秒
+            // 进程存活小于 1 秒 → sleep 1 秒, 避免平凡启动进程，导致 cpu 100%
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }

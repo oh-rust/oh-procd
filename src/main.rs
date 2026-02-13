@@ -54,8 +54,7 @@ async fn main() {
     let reg = Arc::new(registry::Registry::new());
     // Spawn processes
     for process_cfg in cfg.processes.clone() {
-        let reg = reg.clone();
-        tokio::spawn(process::supervisor::supervise(process_cfg, reg));
+        process_cfg.start_spawn(reg.clone());
     }
 
     let cfg_arc = Arc::new(cfg.clone());

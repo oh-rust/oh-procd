@@ -11,10 +11,6 @@
             background: #fafafa;
         }
 
-        h1 {
-            margin-bottom: 16px;
-        }
-
         table {
             width: 100%;
             border-collapse: collapse;
@@ -68,10 +64,7 @@
 
         /* ---- state colors ---- */
         .state-running { color: #16a34a; font-weight: 600; }
-        .state-starting { color: #2563eb; }
-        .state-stopped { color: #6b7280; }
-        .state-backoff { color: #f59e0b; }
-        .state-exited { color: #dc2626; }
+        .state-err { color: #dc2626; }
 
         .footer {
             margin-top: 12px;
@@ -83,7 +76,10 @@
 <body>
 
 <h1>Process List</h1>
-
+<div style="float: right;padding-right: 30px;">
+    <span id="server_info" style="color:green;margin-right: 30px;"></span>
+    <span><a href="/api/logs">logs</a></span>
+</div>
 <table>
     <thead>
         <tr>
@@ -93,6 +89,7 @@
             <th>Command</th>
             <th>Start Time</th>
             <th>Start Count</th>
+            <th>Last Exit Time</th>
             <th>Action</th>
         </tr>
     </thead>
@@ -111,9 +108,8 @@ function formatCommand(cmd) {
 }
 
 function stateToClass(state) {
-    if (!state) return "";
-    if (state.startsWith("Exited")) return "state-exited";
-    return "state-" + state.toLowerCase();
+    if (state && state === "Running") return "state-running";
+    return "state-err";
 }
 
 function canRestart(state) {
@@ -123,7 +119,10 @@ function canRestart(state) {
 async function loadProcesses() {
     try {
         const res = await fetch("/api/processes");
-        const processes = await res.json();
+        const obj = await res.json();
+        const processes=obj.data;
+
+        document.getElementById("server_info").innerHTML=obj.server_start||"error";
 
         const tbody = document.getElementById("process-table");
         tbody.innerHTML = "";
@@ -134,24 +133,29 @@ async function loadProcesses() {
             const cmdText = formatCommand(p.cmd);
             const stateClass = stateToClass(p.state);
 
-            tr.innerHTML = `
+            const stateStr = JSON.stringify(p.state).replace(/"/g, "");
+            let code=`
                 <td>${p.name}</td>
                 <td>${p.pid || "-"}</td>
-                <td class="${stateClass}">${p.state}</td>
+                <td class="${stateClass}">${stateStr}</td>
                 <td title="${cmdText}">
                     <code>${cmdText}</code>
                 </td>
                 <td>${p.start_time || "-"}</td>
                 <td>${p.start_count}</td>
-                <td>
-                    <button
-                        onclick="restartProcess('${p.name}')"
-                        ${canRestart(p.state) ? "" : "disabled"}
-                    >
-                        Restart
-                    </button>
-                </td>
-            `;
+                <td>${p.exit_time || "-"}</td>
+                <td>`
+            
+            if ( p.state==="Running" ){
+                code+= `<button onclick="restartProcess('${p.name}')" > Restart </button>`
+                code+= `<button onclick="killProcess('${p.name}')" > Kill </button>`
+            }else if ( p.state !== "Running" ){
+                code+= `<button onclick="startProcess('${p.name}')" > Start </button>`
+            }
+           
+            code+="</td>"
+
+            tr.innerHTML = code;
 
             tbody.appendChild(tr);
         });
@@ -171,7 +175,37 @@ async function restartProcess(name) {
         });
         loadProcesses();
     } catch (err) {
-        alert("Restart failed");
+        alert("Restart failed: ${err.message || err}");
+    }
+}
+
+async function killProcess(name) {
+    if (!confirm(`Kill process "${name}"?`)) {
+        return;
+    }
+
+    try {
+        await fetch(`/api/process/${name}/kill`, {
+            method: "POST"
+        });
+        loadProcesses();
+    } catch (err) {
+        alert("Kill failed: ${err.message || err}"); 
+    }
+}
+
+async function startProcess(name) {
+    if (!confirm(`Start process "${name}"?`)) {
+        return;
+    }
+
+    try {
+        await fetch(`/api/process/${name}/start`, {
+            method: "POST"
+        });
+        loadProcesses();
+    } catch (err) {
+        alert("Start failed: ${err.message || err}"); 
     }
 }
 

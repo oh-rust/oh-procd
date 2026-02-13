@@ -829,6 +829,7 @@ dependencies = [
  "libc",
  "nix",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tokio",
  "tokio-util",
