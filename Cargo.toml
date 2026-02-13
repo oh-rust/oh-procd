@@ -23,6 +23,7 @@ base64 = "0.22.1"
 humantime-serde = "1.1.1"
 libc = "0.2.180"
 serde_json = "1.0.149"
+sysinfo = "0.38.1"
 
 
 [profile.release]

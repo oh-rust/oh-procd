@@ -70,6 +70,9 @@ pub struct ProcessConfig {
 
     #[serde(default, with = "humantime_serde::option")]
     pub next: Option<Duration>, // 下一次运行距离上次退出的时间间隔
+
+    #[serde(default)]
+    pub memory_limit: Option<u32>, // 内存限制,单位 MB
 }
 
 impl Config {

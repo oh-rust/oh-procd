@@ -50,6 +50,8 @@ pub struct ProcessOut {
     pub start_time: Option<String>,
     pub start_count: u64,
     pub exit_time: Option<String>,
+    pub memory_limit: u32,
+    pub memory_used: String,
 }
 
 impl Registry {
@@ -150,6 +152,8 @@ impl Registry {
                     start_time: start_time_str,
                     start_count: v.start_count,
                     exit_time: exit_time_str,
+                    memory_limit: v.cmd.memory_limit.unwrap_or(0),
+                    memory_used: "".to_string(),
                 }
             })
             .collect()

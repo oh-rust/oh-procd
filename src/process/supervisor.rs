@@ -37,30 +37,65 @@ fn kill_process(pid: u32) {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
-    let mut cmd = Command::new(&cfg.cmd);
-    cmd.args(&cfg.args);
-    for env in &cfg.envs {
+#[cfg(target_os = "linux")]
+const MEMORY_RESOURCE: libc::__rlimit_resource_t = libc::RLIMIT_AS;
+
+#[cfg(target_os = "macos")]
+const MEMORY_RESOURCE: libc::__rlimit_resource_t = libc::RLIMIT_DATA;
+
+#[cfg(unix)]
+fn set_rlimit(resource: libc::__rlimit_resource_t, limit: u64) -> std::io::Result<()> {
+    let rlim = libc::rlimit {
+        rlim_cur: limit,
+        rlim_max: limit,
+    };
+
+    if unsafe { libc::setrlimit(resource, &rlim) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
+    let mut cmd = Command::new(&pcfg.cmd);
+    cmd.args(&pcfg.args);
+    for env in &pcfg.envs {
         if let Some((key, value)) = env.split_once("=") {
             cmd.env(key, value);
         }
     }
-    if !cfg.home.is_empty() {
-        cmd.current_dir(&cfg.home);
+    if !pcfg.home.is_empty() {
+        cmd.current_dir(&pcfg.home);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     {
+        let mem_limit = pcfg.memory_limit.unwrap_or(0);
         unsafe {
-            cmd.pre_exec(|| {
-                // 设置父死信号,父死子死
-                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
-
+            cmd.pre_exec(move || {
+                libc::setsid();
                 // 将自己加入一个新的进程组,子进程和所有子孙在同一进程组
                 libc::setpgid(0, 0); // 0,0 表示自己作为 leader
+
+                // 设置父死信号,父死子死
+                #[cfg(target_os = "linux")]
+                {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                }
+
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                {
+                    // 限制内存大小
+                    if mem_limit > 0 {
+                        let bytes = mem_limit * 1024 * 1024;
+                        set_rlimit(MEMORY_RESOURCE, bytes as u64)?;
+                    }
+                }
+
                 Ok(())
             });
         }
@@ -74,7 +109,7 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         Result::Ok(child) => {
             tracing::info!(
                 "spawn_process {} [ {:?} ] with pid {}",
-                cfg.name.clone(),
+                pcfg.name.clone(),
                 cmd,
                 child.id()
             );
@@ -82,28 +117,29 @@ fn spawn_process(cfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
             child
         }
         Result::Err(e) => {
-            tracing::error!("spawn_process {} [ {:?} ] faild", cfg.name.clone(), cmd);
-            return Err(anyhow::Error::new(e).context(format!("spawn_process {} failed", cfg.name.clone())));
+            let msg = format!("spawn_process {} [ {:?} ] faild: {:?}", pcfg.name.clone(), cmd, e);
+            tracing::error!(msg);
+            return Err(anyhow::Error::new(e).context(msg));
         }
     };
 
-    if cfg.redirect_output {
+    if pcfg.redirect_output {
         if let Some(stdout) = child.stdout.take() {
-            pipe_logger(stdout, cfg.clone(), "out");
+            pipe_logger(stdout, pcfg.clone(), "out");
         }
         if let Some(stderr) = child.stderr.take() {
-            pipe_logger(stderr, cfg.clone(), "err");
+            pipe_logger(stderr, pcfg.clone(), "err");
         }
     } else {
         if let Some(stdout) = child.stdout.take() {
-            let name = cfg.name.clone();
+            let name = pcfg.name.clone();
             print_with_prefix(stdout, move |line| {
                 tracing::info!(from = "stdout", pid = pid, name = name.clone(), "{}", line)
             });
         }
 
         if let Some(stderr) = child.stderr.take() {
-            let name = cfg.name.clone();
+            let name = pcfg.name.clone();
             print_with_prefix(stderr, move |line| {
                 tracing::info!(from = "stderr", pid = pid, name = name.clone(), "{}", line);
             });

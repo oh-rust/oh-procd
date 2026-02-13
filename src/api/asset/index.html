@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8" />
     <title>Oh Procd</title>
@@ -17,7 +18,8 @@
             background: white;
         }
 
-        th, td {
+        th,
+        td {
             padding: 10px 12px;
             border-bottom: 1px solid #e5e5e5;
             text-align: left;
@@ -63,8 +65,14 @@
         }
 
         /* ---- state colors ---- */
-        .state-running { color: #16a34a; font-weight: 600; }
-        .state-err { color: #dc2626; }
+        .state-running {
+            color: #16a34a;
+            font-weight: 600;
+        }
+
+        .state-err {
+            color: #dc2626;
+        }
 
         .footer {
             margin-top: 12px;
@@ -73,148 +81,181 @@
         }
     </style>
 </head>
+
 <body>
 
-<h1>Process List</h1>
-<div style="float: right;padding-right: 30px;">
-    <span id="server_info" style="color:green;margin-right: 30px;"></span>
-    <span><a href="/api/logs">logs</a></span>
-</div>
-<table>
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>PID</th>
-            <th>State</th>
-            <th>Command</th>
-            <th>Start Time</th>
-            <th>Start Count</th>
-            <th>Last Exit Time</th>
-            <th>Action</th>
-        </tr>
-    </thead>
-    <tbody id="process-table"></tbody>
-</table>
+    <h1>Oh Procd</h1>
+    <div style="float: right;padding-right: 30px;">
+        <span><a href="/api/logs">logs</a></span>
+    </div>
+    <table>
+        <caption>Process List</caption>
+        <thead>
+            <tr>
+                <th>No.</th>
+                <th>Name</th>
+                <th>PID</th>
+                <th>State</th>
+                <th>Command</th>
+                <th>Memory</th>
+                <th>Start Time</th>
+                <th>Start Count</th>
+                <th>Last Exit Time</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="process-table"></tbody>
+    </table>
 
-<div class="footer">
-    Auto refresh every 3 seconds
-</div>
+    <table style="width: auto;margin-top: 50px;">
+        <caption>System Info</caption>
+        <thead>
+            <tr>
+                <th style="text-align: center;">Name</th>
+                <th style="text-align: center;">Value</th>
+            </tr>
+        </thead>
+        <tbody id="system-info"></tbody>
+    </table>
 
-<script>
-function formatCommand(cmd) {
-    if (!cmd || !cmd.cmd) return "-";
-    const args = (cmd.args || []).join(" ");
-    return cmd.cmd + (args ? " " + args : "");
-}
 
-function stateToClass(state) {
-    if (state && state === "Running") return "state-running";
-    return "state-err";
-}
+    <div class="footer">
+        Auto refresh every 3 seconds
+    </div>
 
-function canRestart(state) {
-    return state !== "Starting";
-}
+    <script>
+        function formatCommand(cmd) {
+            if (!cmd || !cmd.cmd) return "-";
+            const args = (cmd.args || []).join(" ");
+            return cmd.cmd + (args ? " " + args : "");
+        }
 
-async function loadProcesses() {
-    try {
-        const res = await fetch("/api/processes");
-        const obj = await res.json();
-        const processes=obj.data;
+        function stateToClass(state) {
+            if (state && state === "Running") return "state-running";
+            return "state-err";
+        }
 
-        document.getElementById("server_info").innerHTML=obj.server_start||"error";
+        function canRestart(state) {
+            return state !== "Starting";
+        }
 
-        const tbody = document.getElementById("process-table");
-        tbody.innerHTML = "";
+        async function loadProcesses() {
+            try {
+                const res = await fetch("/api/processes");
+                const obj = await res.json();
+                const processes = obj.data;
 
-        processes.forEach(p => {
-            const tr = document.createElement("tr");
+                const sysInfo = document.getElementById("system-info");
+                let sysInfoCode = ""
+                Object.entries(obj.server).forEach(([key, value]) => {
+                    sysInfoCode += `<tr><td style='text-align:right'>${key} :</td><td>${value}</td></tr>`;
+                });
+                sysInfo.innerHTML = sysInfoCode;
 
-            const cmdText = formatCommand(p.cmd);
-            const stateClass = stateToClass(p.state);
+                const tbody = document.getElementById("process-table");
+                tbody.innerHTML = "";
 
-            const stateStr = JSON.stringify(p.state).replace(/"/g, "");
-            let code=`
+                processes.forEach((p, index) => {
+                    const tr = document.createElement("tr");
+
+                    const cmdText = formatCommand(p.cmd);
+                    const stateClass = stateToClass(p.state);
+
+                    const stateStr = JSON.stringify(p.state).replace(/"/g, "");
+                    let code = `
+                <td>${index}</td>
                 <td>${p.name}</td>
                 <td>${p.pid || "-"}</td>
                 <td class="${stateClass}">${stateStr}</td>
                 <td title="${cmdText}">
                     <code>${cmdText}</code>
                 </td>
-                <td>${p.start_time || "-"}</td>
+                <td>`;
+
+                    if (p.memory_limit > 0) {
+                        code += `<span style="white-space: nowrap">Limit: ${p.memory_limit} MB</span><br/>`;
+                    }
+
+                    if (p.memory_used != "") {
+                        code += `<span style="white-space: nowrap">Used: ${p.memory_used || "-"}</span>`;
+                    }
+
+                    code += `</td>
+                <td style="white-space: nowrap">${p.start_time || "-"}</td>
                 <td>${p.start_count}</td>
-                <td>${p.exit_time || "-"}</td>
+                <td style="white-space: nowrap">${p.exit_time || "-"}</td>
                 <td>`
-            
-            if ( p.state==="Running" ){
-                code+= `<button onclick="restartProcess('${p.name}')" > Restart </button>`
-                code+= `<button onclick="killProcess('${p.name}')" > Kill </button>`
-            }else if ( p.state !== "Running" ){
-                code+= `<button onclick="startProcess('${p.name}')" > Start </button>`
+
+                    if (p.state === "Running") {
+                        code += `<button onclick="restartProcess('${p.name}')" > Restart </button>`
+                        code += `<button onclick="killProcess('${p.name}')" > Kill </button>`
+                    } else if (p.state !== "Running") {
+                        code += `<button onclick="startProcess('${p.name}')" > Start </button>`
+                    }
+
+                    code += "</td>"
+
+                    tr.innerHTML = code;
+
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("loadProcesses failed:", err);
             }
-           
-            code+="</td>"
+        }
 
-            tr.innerHTML = code;
+        async function restartProcess(name) {
+            if (!confirm(`Restart process "${name}"?`)) {
+                return;
+            }
 
-            tbody.appendChild(tr);
-        });
-    } catch (err) {
-        console.error("loadProcesses failed:", err);
-    }
-}
+            try {
+                await fetch(`/api/process/${name}/restart`, {
+                    method: "POST"
+                });
+                loadProcesses();
+            } catch (err) {
+                alert("Restart failed: ${err.message || err}");
+            }
+        }
 
-async function restartProcess(name) {
-    if (!confirm(`Restart process "${name}"?`)) {
-        return;
-    }
+        async function killProcess(name) {
+            if (!confirm(`Kill process "${name}"?`)) {
+                return;
+            }
 
-    try {
-        await fetch(`/api/process/${name}/restart`, {
-            method: "POST"
-        });
+            try {
+                await fetch(`/api/process/${name}/kill`, {
+                    method: "POST"
+                });
+                loadProcesses();
+            } catch (err) {
+                alert("Kill failed: ${err.message || err}");
+            }
+        }
+
+        async function startProcess(name) {
+            if (!confirm(`Start process "${name}"?`)) {
+                return;
+            }
+
+            try {
+                await fetch(`/api/process/${name}/start`, {
+                    method: "POST"
+                });
+                loadProcesses();
+            } catch (err) {
+                alert("Start failed: ${err.message || err}");
+            }
+        }
+
+        // initial load
         loadProcesses();
-    } catch (err) {
-        alert("Restart failed: ${err.message || err}");
-    }
-}
 
-async function killProcess(name) {
-    if (!confirm(`Kill process "${name}"?`)) {
-        return;
-    }
-
-    try {
-        await fetch(`/api/process/${name}/kill`, {
-            method: "POST"
-        });
-        loadProcesses();
-    } catch (err) {
-        alert("Kill failed: ${err.message || err}"); 
-    }
-}
-
-async function startProcess(name) {
-    if (!confirm(`Start process "${name}"?`)) {
-        return;
-    }
-
-    try {
-        await fetch(`/api/process/${name}/start`, {
-            method: "POST"
-        });
-        loadProcesses();
-    } catch (err) {
-        alert("Start failed: ${err.message || err}"); 
-    }
-}
-
-// initial load
-loadProcesses();
-
-// auto refresh
-setInterval(loadProcesses, 3000);
-</script>
+        // auto refresh
+        setInterval(loadProcesses, 3000);
+    </script>
 
 </body>
+
 </html>
