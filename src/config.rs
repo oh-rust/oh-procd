@@ -73,6 +73,9 @@ pub struct ProcessConfig {
 
     #[serde(default)]
     pub memory_limit: Option<u32>, // 内存限制,单位 MB
+
+    #[serde(default)]
+    pub web_address: String, // 通过管理页面访问的地址，支持变量 ${HOST}
 }
 
 impl Config {

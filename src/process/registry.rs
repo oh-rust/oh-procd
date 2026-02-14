@@ -52,6 +52,7 @@ pub struct ProcessOut {
     pub exit_time: Option<String>,
     pub memory_limit: u32,
     pub memory_used: String,
+    pub web_address: String,
 }
 
 impl Registry {
@@ -154,6 +155,7 @@ impl Registry {
                     exit_time: exit_time_str,
                     memory_limit: v.cmd.memory_limit.unwrap_or(0),
                     memory_used: "".to_string(),
+                    web_address: v.cmd.web_address.clone(),
                 }
             })
             .collect()

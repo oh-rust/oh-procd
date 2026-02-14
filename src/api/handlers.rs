@@ -1,6 +1,7 @@
 use axum::{
     Json, Router,
-    extract::{self, Extension},
+    extract::{self, Extension, Request},
+    http::header,
     middleware, response,
     routing::{get, post},
 };
@@ -38,7 +39,7 @@ struct ServerInfo {
     sys_total_swap: String,   //  系统，
     sys_used_swap: String,
 }
-async fn list_processes(Extension(reg): Extension<Arc<Registry>>) -> Json<ListResponse<Vec<ProcessOut>>> {
+async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) -> Json<ListResponse<Vec<ProcessOut>>> {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
     let mut server = ServerInfo {
@@ -61,6 +62,14 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>) -> Json<ListRe
         server.cpu_usage = proc.cpu_usage();
         server.pid = proc.pid().as_u32();
     }
+
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let hostname = host.split(':').next().unwrap_or("");
+
     let mut items = reg.list();
     for x in items.iter_mut() {
         if x.pid == 0 {
@@ -68,6 +77,9 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>) -> Json<ListRe
         }
         if let Some(proc) = sys.process(sysinfo::Pid::from_u32(x.pid)) {
             x.memory_used = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
+        }
+        if x.web_address.contains("{") {
+            x.web_address = x.web_address.replace("{HOST}", hostname);
         }
     }
 

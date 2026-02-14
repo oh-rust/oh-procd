@@ -162,9 +162,16 @@
                     const stateClass = stateToClass(p.state);
 
                     const stateStr = JSON.stringify(p.state).replace(/"/g, "");
-                    let code = `
-                <td>${index}</td>
-                <td>${p.name}</td>
+                    let code = `<td>${index}</td><td>`;
+
+                    if (p.web_address !== "") {
+                        code += `<a href='${p.web_address}' target='_blank'>${p.name}</a>`;
+                    } else {
+                        code += `${p.name}`;
+                    }
+
+
+                    code += `</td>
                 <td>${p.pid || "-"}</td>
                 <td class="${stateClass}">${stateStr}</td>
                 <td title="${cmdText}">
