@@ -3,18 +3,12 @@ mod config;
 mod logger;
 mod process;
 
+use std::net::SocketAddr;
 use std::{env, sync::Arc};
 use tracing;
 
 use crate::process::registry;
 use clap::Parser;
-
-// fn init_tracing() {
-//     let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
-
-//     tracing_subscriber::fmt().with_env_filter(log_filter).init();
-//     tracing::info!("starting ...");
-// }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -59,15 +53,22 @@ async fn main() {
 
     let cfg_arc = Arc::new(cfg.clone());
 
+    let state = api::auth::AuthState::new();
+    // 启动后台清理任务
+    state.clone().cleanup_task();
+
     // Set up web API
     let app = api::handlers::build_router()
         .layer(axum::Extension(reg.clone()))
         .layer(axum::Extension(cfg_arc))
+        .layer(axum::Extension(state))
         .layer(axum::Extension(log_buf));
 
     tracing::info!("Listening on {}", cfg.http.addr);
 
     let addr = &cfg.http.addr;
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+        .await
+        .unwrap();
 }

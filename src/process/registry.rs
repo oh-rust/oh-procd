@@ -138,7 +138,6 @@ impl Registry {
             ret.sort_by_key(|(_, v)| v.index);
             ret
         };
-        tracing::info!("list.size={}", entries.len());
 
         entries
             .into_iter()

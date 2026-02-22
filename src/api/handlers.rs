@@ -1,12 +1,14 @@
 use axum::{
     Json, Router,
-    extract::{self, Extension, Request},
+    extract::{self, ConnectInfo, Extension, Request},
     http::header,
     middleware, response,
     routing::{get, post},
 };
 
+use rand::RngExt;
 use serde::Serialize;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
@@ -170,5 +172,13 @@ pub fn build_router() -> Router {
         .route("/api/process/{name}/kill", post(kill_process))
         .route("/api/process/{name}/start", post(start_process))
         .layer(middleware::from_fn(basic_auth))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
+            let client_addr = req
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ci| ci.0.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let log_id: u64 = rand::rng().random_range(1..9999999);
+            tracing::info_span!("HTTP", log_id = log_id, client = client_addr)
+        }))
 }
