@@ -11,11 +11,11 @@ serde_yaml = "0.9.33"
 chrono = "0.4"
 tracing-appender = "0.2.4"
 tokio-util = "0.7.18"
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 tower-http = {version = "0.6.8", features = ["trace"]}
 tracing = "0.1.44"
 tracing-subscriber = {version="0.3.22", features=["env-filter"]}
-nix = {version="0.31.1", features = ["signal", "process","resource"] }
+nix = {version="0.31.1", features = ["signal", "process","resource","mount","sched","fs","user"] }
 windows-sys = "0.61.2"
 config = "0.15.19"
 clap = { version = "4.5.57", features = ["derive"] }
@@ -24,6 +24,7 @@ humantime-serde = "1.1.1"
 libc = "0.2.180"
 serde_json = "1.0.149"
 sysinfo = "0.38.1"
+caps = "0.5.6"
 
 
 [profile.release]

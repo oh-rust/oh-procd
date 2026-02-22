@@ -76,6 +76,13 @@ pub struct ProcessConfig {
 
     #[serde(default)]
     pub web_address: String, // 通过管理页面访问的地址，支持变量 ${HOST}
+
+    #[serde(default = "default_true")]
+    pub enable: bool, // 该配置是否启用，默认为 true
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Config {

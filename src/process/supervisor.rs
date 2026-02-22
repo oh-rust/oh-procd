@@ -11,13 +11,15 @@ use crate::{
 };
 
 #[cfg(unix)]
-use nix::sys::signal::{Signal, kill};
-
-#[cfg(unix)]
-use nix::sys::resource::{Resource, rlim_t, setrlimit};
-
-#[cfg(unix)]
-use nix::unistd::Pid;
+use {
+    caps::{CapSet, Capability, has_cap},
+    nix::mount::{MsFlags, mount},
+    nix::sched::{CloneFlags, unshare},
+    nix::sys::resource::{Resource, rlim_t, setrlimit},
+    nix::sys::signal::{Signal, kill},
+    nix::unistd::{Pid, Uid, chdir, chroot},
+    std::os::unix::process::CommandExt,
+};
 
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess};
@@ -41,12 +43,10 @@ fn kill_process(pid: u32) {
     }
 }
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-
 fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     let mut cmd = Command::new(&pcfg.cmd);
     cmd.args(&pcfg.args);
+    cmd.env("NO_COLOR", "1"); // 子进程不输出颜色
     for env in &pcfg.envs {
         if let Some((key, value)) = env.split_once("=") {
             cmd.env(key, value);
@@ -59,8 +59,16 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     #[cfg(unix)]
     {
         let mem_limit = pcfg.memory_limit.unwrap_or(0);
+        let sandbox_root = pcfg.home.clone();
+        let name = pcfg.name.clone();
+        let can_unshare =
+            Uid::current().is_root() || has_cap(None, CapSet::Effective, Capability::CAP_SYS_ADMIN).unwrap_or(false);
+
         unsafe {
             cmd.pre_exec(move || {
+                // ==============================
+                // 1️⃣ 进程组隔离
+                // ==============================
                 libc::setsid();
                 // 将自己加入一个新的进程组,子进程和所有子孙在同一进程组
                 libc::setpgid(0, 0); // 0,0 表示自己作为 leader
@@ -71,13 +79,83 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
                     libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
                 }
 
+                // ==============================
+                // 2️⃣ namespace 隔离
+                // ==============================
+                #[cfg(target_os = "linux")]
+                {
+                    if can_unshare {
+                        tracing::info!("{}: running with namespace isolation (unshare enabled)", name);
+                        unshare(
+                            CloneFlags::CLONE_NEWNS
+                                | CloneFlags::CLONE_NEWPID
+                                | CloneFlags::CLONE_NEWUTS
+                                | CloneFlags::CLONE_NEWIPC,
+                        )
+                        .map_err(|e| {
+                            tracing::error!("{} unshare failed: {:?}", name, e);
+                            std::io::Error::new(std::io::ErrorKind::Other, e)
+                        })?;
+
+                        // mount namespace 私有化,需要 root 权限
+                        mount(
+                            None::<&str>,
+                            "/",
+                            None::<&str>,
+                            MsFlags::MS_REC | MsFlags::MS_PRIVATE,
+                            None::<&str>,
+                        )
+                        .map_err(|e| {
+                            tracing::error!("{} mount failed: {:?}", name, e);
+                            std::io::Error::new(std::io::ErrorKind::Other, e)
+                        })?;
+
+                        if !sandbox_root.is_empty() {
+                            use std::path::Path;
+                            chroot(Path::new(&sandbox_root)).map_err(|e| {
+                                tracing::error!("{} chroot({}) failed: {:?}", name, sandbox_root.clone(), e);
+                                std::io::Error::new(std::io::ErrorKind::Other, e)
+                            })?;
+                            chdir("/").map_err(|e| {
+                                tracing::error!("{} chdir(/) failed: {:?}", name, e);
+                                std::io::Error::new(std::io::ErrorKind::Other, e)
+                            })?;
+
+                            // 挂载 /proc
+                            mount(Some("proc"), "/proc", Some("proc"), MsFlags::empty(), None::<&str>).map_err(
+                                |e| {
+                                    tracing::error!("{} mount /proc failed: {:?}", name, e);
+                                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                                },
+                            )?;
+                            // 挂载 /tmp
+                            mount(Some("tmpfs"), "/tmp", Some("tmpfs"), MsFlags::empty(), None::<&str>).map_err(
+                                |e| {
+                                    tracing::error!("{} mount /tmp failed: {:?}", name, e);
+                                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                                },
+                            )?;
+                        }
+                    } else {
+                        tracing::info!(
+                            "{}: running without namespace isolation (non-root or missing CAP_SYS_ADMIN)",
+                            name
+                        );
+                    }
+                }
+
+                // ==============================
+                // 3️⃣ 内存限制
+                // ==============================
                 #[cfg(any(target_os = "linux", target_os = "macos"))]
                 {
                     // 限制内存大小
                     if mem_limit > 0 {
                         let bytes: rlim_t = (mem_limit * 1024 * 1024) as u64;
-                        setrlimit(Resource::RLIMIT_AS, bytes, bytes)
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        setrlimit(Resource::RLIMIT_AS, bytes, bytes).map_err(|e| {
+                            tracing::error!("{} set-memory-limit failed: {:?}", name, e);
+                            std::io::Error::new(std::io::ErrorKind::Other, e)
+                        })?;
                     }
                 }
 
@@ -103,7 +181,7 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         }
         Result::Err(e) => {
             let msg = format!("spawn_process {} [ {:?} ] faild: {:?}", pcfg.name.clone(), cmd, e);
-            tracing::error!(msg);
+            tracing::error!("{}", msg);
             return Err(anyhow::Error::new(e).context(msg));
         }
     };
@@ -154,6 +232,10 @@ fn print_with_prefix(mut reader: impl std::io::Read + Send + 'static, output: im
 pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
     let (tx, mut rx) = mpsc::channel::<ControlMsg>(8);
     registry.register_process(&cfg.name, cfg.clone(), tx);
+    if !cfg.enable {
+        tracing::warn!("{} enable=false, skipped", cfg.name);
+        return;
+    }
 
     // 如果 cfg.next 有值
     let wait_next = || async {

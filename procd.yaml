@@ -26,6 +26,7 @@ processes:
 
   - name: not-found
     cmd: "not-found-cmd" # 不存在的命令
+    enable: false  # 该命令被禁用
     args: ["10"]
     home: /tmp
     # max_run: "10s"  # 最长持续运行时长
