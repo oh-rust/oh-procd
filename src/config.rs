@@ -98,7 +98,7 @@ pub struct ProcessConfig {
     pub redirect_output: bool, // 是否重定向 stdout 和 stderr 到日志
 
     #[serde(default)]
-    pub output_dir: String, // 单独的输出目录
+    pub output_dir: String, // 单独的日志输出目录
 
     #[serde(default, with = "humantime_serde::option")]
     pub max_run: Option<Duration>, // 最大运行时长，秒数，配置文件配置值 "10s"、"1h30m"
@@ -128,10 +128,6 @@ fn default_true() -> bool {
 
 impl Config {
     fn check_and_init(&mut self) {
-        if self.log_dir.is_empty() {
-            self.log_dir = "logs".to_string()
-        }
-
         let sbox = self.sandbox.clone();
         for pc in self.process.iter_mut() {
             // 合并全局的环境变量
@@ -139,14 +135,10 @@ impl Config {
             merged.extend(pc.envs.clone());
             pc.envs = merged;
 
-            if pc.output_dir.is_empty() {
+            if !self.log_dir.is_empty() && pc.output_dir.is_empty() {
                 let mut path = std::path::PathBuf::from(&self.log_dir);
                 path.push(&pc.name);
                 pc.output_dir = path.to_string_lossy().to_string()
-            }
-
-            if pc.home.is_empty() {
-                pc.home = self.home.clone();
             }
 
             if !self.enable_sandbox || pc.use_sandbox == "no" {

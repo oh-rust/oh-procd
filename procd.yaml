@@ -1,4 +1,11 @@
 # 必填配置，管理页面的 http server
+
+# home: "/app"    # 工作目录，可选
+log_dir: "logs" # 日志目录，可选，默认为空，当不为空时，每个子进程创建一个对应的目录，并将stderr 和 stdout 存放进去
+# envs: ["k1=v1"] # 全局环境变量，可选
+# restart_delay: "10s" # 二进制文件变化后，最长自动重启的时间间隔，可选，默认 10秒
+# enable_sandbox: true # 使用沙盒机制，可选，默认为 true，依赖 sandbox 配置段落
+
 http:
   addr: "127.0.0.1:8080" 
 
@@ -55,7 +62,11 @@ process:
     # next: "30s" # 退出后，下次运行等待时长
     memory_limit: 100 # 内存大小限制，单位 MB，值 > 0 时生效，若使用超限，可能 panic 或崩溃
     web_address: "http://{HOST}:8090/"
-    use_sandbox: "default" # 使用指定的沙盒，可选，默认使用第一个
+    # enable:true # 是否启用，可选，默认 true
+    # use_sandbox: "default" # 使用指定的沙盒，可选，默认使用第一个。若值为 no 则不使用沙盒
+    # sandbox:["firejail"] # 专属沙盒命令，可选，和 use_sandbox 使用一个即可。
+    # output_dir: "/app/logs/web-api" # 保存 stderr 和 stdout 的目录，可选。有值时则不适应全局配置的 log_dir 的子目录
+    redirect_output: true # 是否重定向 stderr 和 stdout，可选，默认为 false
 
   - name: sleep
     cmd: "sleep"

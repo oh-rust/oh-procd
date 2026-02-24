@@ -88,27 +88,11 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
         }
     };
 
-    if pcfg.redirect_output {
-        if let Some(stdout) = child.stdout.take() {
-            pipe_logger(stdout, pcfg.clone(), "out");
-        }
-        if let Some(stderr) = child.stderr.take() {
-            pipe_logger(stderr, pcfg.clone(), "err");
-        }
-    } else {
-        if let Some(stdout) = child.stdout.take() {
-            let name = pcfg.name.clone();
-            print_with_prefix(stdout, move |line| {
-                tracing::info!(from = "stdout", pid = pid, name = name.clone(), "{}", line)
-            });
-        }
-
-        if let Some(stderr) = child.stderr.take() {
-            let name = pcfg.name.clone();
-            print_with_prefix(stderr, move |line| {
-                tracing::info!(from = "stderr", pid = pid, name = name.clone(), "{}", line);
-            });
-        }
+    if let Some(stdout) = child.stdout.take() {
+        pipe_logger(stdout, pcfg.clone(), pid, "stdout");
+    }
+    if let Some(stderr) = child.stderr.take() {
+        pipe_logger(stderr, pcfg.clone(), pid, "stderr");
     }
 
     Ok(child)
@@ -124,23 +108,6 @@ fn setup_memory_limit(name: &str, mem_limit_mb: u32) -> std::io::Result<()> {
     setrlimit(Resource::RLIMIT_AS, bytes, bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     tracing::info!("{}: memory limit set to {} MB", name, mem_limit_mb);
     Ok(())
-}
-
-fn print_with_prefix(mut reader: impl std::io::Read + Send + 'static, output: impl Fn(&str) + Send + 'static) {
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            let n = match reader.read(&mut buf) {
-                Ok(0) => break, // EOF
-                Ok(n) => n,
-                Err(_) => break,
-            };
-            let s = String::from_utf8_lossy(&buf[..n]);
-            for line in s.lines() {
-                output(line);
-            }
-        }
-    });
 }
 
 pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {

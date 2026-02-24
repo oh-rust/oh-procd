@@ -11,7 +11,7 @@ fn current_hour() -> String {
     Local::now().format("%Y%m%d%H").to_string()
 }
 
-pub fn pipe_logger(mut reader: impl std::io::Read + Send + 'static, cfg: ProcessConfig, kind: &'static str) {
+pub fn pipe_logger(mut reader: impl std::io::Read + Send + 'static, cfg: ProcessConfig, pid: u32, kind: &'static str) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
 
@@ -27,6 +27,16 @@ pub fn pipe_logger(mut reader: impl std::io::Read + Send + 'static, cfg: Process
                     break;
                 }
             };
+
+            // 额外往 tracing 输出一份
+            {
+                let s = String::from_utf8_lossy(&buf[..n]);
+                tracing::debug!(from = kind, pid = pid, name = &cfg.name, "{}", &s);
+            }
+
+            if !cfg.redirect_output || cfg.output_dir.is_empty() {
+                continue;
+            }
 
             let dir = Path::new(&cfg.output_dir);
             if !dir.exists() {
@@ -57,9 +67,6 @@ pub fn pipe_logger(mut reader: impl std::io::Read + Send + 'static, cfg: Process
                     }
                 };
             }
-
-            // 额外将重定向的内容输出到 tracing 统一的日志
-            tracing::info!(from = kind, name = cfg.name.clone(), "{:?}", &buf[..n]);
 
             if let Some(f) = file.as_mut() {
                 if let Err(e) = f.write_all(&buf[..n]) {

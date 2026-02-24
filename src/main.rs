@@ -21,9 +21,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    let log_buf = logger::new_logbuf();
+    logger::setup();
 
-    // init_tracing();
+    let log_buf = logger::LogBuffer::new(100);
 
     tracing::info!("starting ...");
 
@@ -44,6 +44,8 @@ async fn main() {
     for process_cfg in cfg.process.clone() {
         process_cfg.start_spawn(reg.clone());
     }
+
+    let _guard = logger::init_tracing(&cfg.log_dir, log_buf.clone());
 
     let cfg_arc = Arc::new(cfg.clone());
 

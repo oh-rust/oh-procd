@@ -12,7 +12,7 @@ pub struct LogBuffer {
 }
 
 impl LogBuffer {
-    fn new(capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
             buffer: Arc::new(Mutex::new(VecDeque::with_capacity(capacity))),
             capacity,
@@ -97,18 +97,49 @@ where
     }
 }
 
-pub fn new_logbuf() -> LogBuffer {
-    let log_buffer = LogBuffer::new(100);
-    let layer = BufferLayer {
-        buffer: log_buffer.clone(),
+pub fn setup() {
+    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
+    let subscriber = tracing_subscriber::fmt().with_env_filter(log_filter).finish();
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+}
+
+// 初始日志，日志多写
+pub fn init_tracing(log_dir: &str, lb: LogBuffer) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    use tracing_appender::non_blocking;
+    use tracing_appender::rolling;
+    use tracing_subscriber::fmt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let log_dir: &str = log_dir.trim();
+
+    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
+
+    // 控制台 layer（带颜色）
+    let console_layer = fmt::layer().with_ansi(true).with_target(true);
+
+    let bf_layer = BufferLayer {
+        buffer: lb.clone(),
         counter: AtomicU64::new(0),
     };
-    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(log_filter)
-        .finish()
-        .with(layer);
-    tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    log_buffer
+    let registry = tracing_subscriber::registry()
+        .with(log_filter)
+        .with(console_layer)
+        .with(bf_layer);
+
+    if !log_dir.is_empty() {
+        std::fs::create_dir_all(log_dir).ok();
+
+        let file_appender = rolling::hourly(log_dir, "procd.log");
+        let (file_writer, guard) = non_blocking(file_appender);
+
+        let file_layer = fmt::layer().with_ansi(false).with_writer(file_writer);
+
+        registry.with(file_layer).init();
+
+        return Some(guard); // 必须保存，否则日志会丢
+    }
+
+    registry.init();
+    None
 }
