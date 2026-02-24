@@ -3,31 +3,73 @@ http:
   addr: "127.0.0.1:8080" 
 
 # 可选配置，认证账号
-auth:
-  username: admin
-  password: 123
+# auth:
+#   username: admin
+#   password: 123
 
-processes:
+
+sandbox:
+  - name: default
+    cmd:
+      - bwrap
+      - --ro-bind
+      - /bin
+      - /bin
+      - --ro-bind
+      - /usr
+      - /usr
+      - --ro-bind
+      - /lib
+      - /lib
+      - --ro-bind
+      - /lib64
+      - /lib64
+      - --proc
+      - /proc
+      - --tmpfs
+      - /tmp
+      - --dev
+      - /dev
+      - --die-with-parent
+      - --ro-bind
+      - "{Process-Home}"
+      - /app
+      - --chdir
+      - /app
+
+  - name: firejail
+    cmd:
+      - firejail
+      - --private
+      - --whitelist
+      - "{Process-Home}"
+      - --chdir
+      - "{Process-Home}"
+
+process:
   - name: web-api
     cmd: "python3"
     args: ["-m", "http.server","8090"]
-    home: /tmp
+    # home: /tmp
     # max_run: "10s"  # 最长持续运行时长
     # next: "30s" # 退出后，下次运行等待时长
     memory_limit: 100 # 内存大小限制，单位 MB，值 > 0 时生效，若使用超限，可能 panic 或崩溃
     web_address: "http://{HOST}:8090/"
+    use_sandbox: "default" # 使用指定的沙盒，可选，默认使用第一个
 
   - name: sleep
     cmd: "sleep"
     args: ["10"]
-    home: /tmp
+    # home: /tmp
+    # enable: false
     # max_run: "10s"  # 最长持续运行时长
     next: "30s" # 退出后，下次运行等待时长
+    
 
   - name: not-found
     cmd: "not-found-cmd" # 不存在的命令
     enable: false  # 该命令被禁用
     args: ["10"]
-    home: /tmp
+    # home: /tmp
     # max_run: "10s"  # 最长持续运行时长
     next: "30s" # 退出后，下次运行等待时长

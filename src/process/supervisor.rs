@@ -1,4 +1,4 @@
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use tokio::{sync::mpsc, time::Duration};
 
@@ -12,12 +12,9 @@ use crate::{
 
 #[cfg(unix)]
 use {
-    caps::{CapSet, Capability, has_cap},
-    nix::mount::{MsFlags, mount},
-    nix::sched::{CloneFlags, unshare},
     nix::sys::resource::{Resource, rlim_t, setrlimit},
     nix::sys::signal::{Signal, kill},
-    nix::unistd::{Pid, Uid, chdir, chroot},
+    nix::unistd::Pid,
     std::os::unix::process::CommandExt,
 };
 
@@ -29,7 +26,9 @@ fn kill_process(pid: u32) {
     if pid == 0 {
         return;
     }
-    let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
+    // ps -e -o pid,pgid,ppid,comm
+    let pgid = -(pid as i32);
+    let _ = kill(Pid::from_raw(pgid), Signal::SIGKILL);
 }
 
 #[cfg(windows)]
@@ -44,118 +43,26 @@ fn kill_process(pid: u32) {
 }
 
 fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
-    let mut cmd = Command::new(&pcfg.cmd);
-    cmd.args(&pcfg.args);
-    cmd.env("NO_COLOR", "1"); // 子进程不输出颜色
-    for env in &pcfg.envs {
-        if let Some((key, value)) = env.split_once("=") {
-            cmd.env(key, value);
-        }
-    }
-    if !pcfg.home.is_empty() {
-        cmd.current_dir(&pcfg.home);
-    }
-
+    let mut cmd = pcfg.get_cmd();
     #[cfg(unix)]
     {
         let mem_limit = pcfg.memory_limit.unwrap_or(0);
-        let sandbox_root = pcfg.home.clone();
         let name = pcfg.name.clone();
-        let can_unshare =
-            Uid::current().is_root() || has_cap(None, CapSet::Effective, Capability::CAP_SYS_ADMIN).unwrap_or(false);
 
         unsafe {
             cmd.pre_exec(move || {
-                // ==============================
-                // 1️⃣ 进程组隔离
-                // ==============================
                 libc::setsid();
-                // 将自己加入一个新的进程组,子进程和所有子孙在同一进程组
-                libc::setpgid(0, 0); // 0,0 表示自己作为 leader
+                libc::setpgid(0, 0);
 
-                // 设置父死信号,父死子死
                 #[cfg(target_os = "linux")]
                 {
                     libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
                 }
 
-                // ==============================
-                // 2️⃣ namespace 隔离
-                // ==============================
-                #[cfg(target_os = "linux")]
-                {
-                    if can_unshare {
-                        tracing::info!("{}: running with namespace isolation (unshare enabled)", name);
-                        unshare(
-                            CloneFlags::CLONE_NEWNS
-                                | CloneFlags::CLONE_NEWPID
-                                | CloneFlags::CLONE_NEWUTS
-                                | CloneFlags::CLONE_NEWIPC,
-                        )
-                        .map_err(|e| {
-                            tracing::error!("{} unshare failed: {:?}", name, e);
-                            std::io::Error::new(std::io::ErrorKind::Other, e)
-                        })?;
-
-                        // mount namespace 私有化,需要 root 权限
-                        mount(
-                            None::<&str>,
-                            "/",
-                            None::<&str>,
-                            MsFlags::MS_REC | MsFlags::MS_PRIVATE,
-                            None::<&str>,
-                        )
-                        .map_err(|e| {
-                            tracing::error!("{} mount failed: {:?}", name, e);
-                            std::io::Error::new(std::io::ErrorKind::Other, e)
-                        })?;
-
-                        if !sandbox_root.is_empty() {
-                            use std::path::Path;
-                            chroot(Path::new(&sandbox_root)).map_err(|e| {
-                                tracing::error!("{} chroot({}) failed: {:?}", name, sandbox_root.clone(), e);
-                                std::io::Error::new(std::io::ErrorKind::Other, e)
-                            })?;
-                            chdir("/").map_err(|e| {
-                                tracing::error!("{} chdir(/) failed: {:?}", name, e);
-                                std::io::Error::new(std::io::ErrorKind::Other, e)
-                            })?;
-
-                            // 挂载 /proc
-                            mount(Some("proc"), "/proc", Some("proc"), MsFlags::empty(), None::<&str>).map_err(
-                                |e| {
-                                    tracing::error!("{} mount /proc failed: {:?}", name, e);
-                                    std::io::Error::new(std::io::ErrorKind::Other, e)
-                                },
-                            )?;
-                            // 挂载 /tmp
-                            mount(Some("tmpfs"), "/tmp", Some("tmpfs"), MsFlags::empty(), None::<&str>).map_err(
-                                |e| {
-                                    tracing::error!("{} mount /tmp failed: {:?}", name, e);
-                                    std::io::Error::new(std::io::ErrorKind::Other, e)
-                                },
-                            )?;
-                        }
-                    } else {
-                        tracing::info!(
-                            "{}: running without namespace isolation (non-root or missing CAP_SYS_ADMIN)",
-                            name
-                        );
-                    }
-                }
-
-                // ==============================
-                // 3️⃣ 内存限制
-                // ==============================
                 #[cfg(any(target_os = "linux", target_os = "macos"))]
                 {
-                    // 限制内存大小
                     if mem_limit > 0 {
-                        let bytes: rlim_t = (mem_limit * 1024 * 1024) as u64;
-                        setrlimit(Resource::RLIMIT_AS, bytes, bytes).map_err(|e| {
-                            tracing::error!("{} set-memory-limit failed: {:?}", name, e);
-                            std::io::Error::new(std::io::ErrorKind::Other, e)
-                        })?;
+                        setup_memory_limit(&name, mem_limit)?;
                     }
                 }
 
@@ -170,17 +77,12 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
 
     let mut child = match cmd.spawn() {
         Result::Ok(child) => {
-            tracing::info!(
-                "spawn_process {} [ {:?} ] with pid {}",
-                pcfg.name.clone(),
-                cmd,
-                child.id()
-            );
+            tracing::info!("spawn_process [ {:?} ] with pid {}", cmd, child.id());
             pid = child.id();
             child
         }
         Result::Err(e) => {
-            let msg = format!("spawn_process {} [ {:?} ] faild: {:?}", pcfg.name.clone(), cmd, e);
+            let msg = format!("spawn_process [ {:?} ] faild: {:?}", cmd, e);
             tracing::error!("{}", msg);
             return Err(anyhow::Error::new(e).context(msg));
         }
@@ -212,6 +114,18 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
     Ok(child)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn setup_memory_limit(name: &str, mem_limit_mb: u32) -> std::io::Result<()> {
+    if mem_limit_mb == 0 {
+        return Ok(());
+    }
+
+    let bytes: rlim_t = (mem_limit_mb * 1024 * 1024) as u64;
+    setrlimit(Resource::RLIMIT_AS, bytes, bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    tracing::info!("{}: memory limit set to {} MB", name, mem_limit_mb);
+    Ok(())
+}
+
 fn print_with_prefix(mut reader: impl std::io::Read + Send + 'static, output: impl Fn(&str) + Send + 'static) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -230,10 +144,13 @@ fn print_with_prefix(mut reader: impl std::io::Read + Send + 'static, output: im
 }
 
 pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
+    let worker_span = tracing::span!(tracing::Level::INFO, "worker", name = cfg.name);
+    let _enter = worker_span.enter();
+
     let (tx, mut rx) = mpsc::channel::<ControlMsg>(8);
     registry.register_process(&cfg.name, cfg.clone(), tx);
     if !cfg.enable {
-        tracing::warn!("{} enable=false, skipped", cfg.name);
+        tracing::warn!("enable=false, skipped");
         return;
     }
 
@@ -258,7 +175,11 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
         };
         let pid = child.id();
         registry.set_running(&cfg.name, pid);
-        tracing::info!("{} running with pid {}", cfg.name, pid);
+
+        let span1 = tracing::span!(parent:&worker_span,tracing::Level::INFO,"pid",pid);
+        let _enter1 = span1.enter();
+
+        tracing::info!("running");
 
         // 用 oneshot 接收 wait 结果
         let (exit_tx, mut exit_rx) = tokio::sync::oneshot::channel();
@@ -282,7 +203,7 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
             // 子进程自然退出
             Result::Ok(code) = &mut exit_rx => {
                 registry.set_state(&cfg.name, ProcState::Exited(code));
-                tracing::info!("{} exited with {}", cfg.name, code);
+                tracing::info!(code,"exited");
                 wait_next().await;
             }
 
@@ -290,13 +211,13 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
             Some(cmd) = rx.recv() => {
                 match cmd {
                     ControlMsg::Restart  => {
-                        tracing::info!("{} received restart", cfg.name);
+                        tracing::info!("received restart");
                         kill_process(pid);
                         registry.set_state(&cfg.name, ProcState::Stopped);
                         // 主动重启的，不需要 wait_next
                     }
                     ControlMsg::Kill =>{
-                        tracing::info!("{} received kill", cfg.name);
+                        tracing::info!("received kill");
                         kill_process(pid);
                         registry.set_state(&cfg.name, ProcState::Killed);
                         return   // 主动杀死的，退出循环
@@ -307,7 +228,7 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
             // 达到最大运行时长
             _ = max_run_fut => {
                 let elapsed = start_time.elapsed();
-                tracing::info!("{} reached max_run_time (live={:?}), killing process", cfg.name,elapsed);
+                tracing::info!("reached max_run_time (live={:?}), killing process",elapsed);
                 kill_process(pid);
                 registry.set_state(&cfg.name, ProcState::Stopped);
                 wait_next().await;

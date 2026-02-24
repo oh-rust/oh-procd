@@ -20,8 +20,8 @@ pub struct AuthState {
     pub failed: Arc<DashMap<String, Vec<Instant>>>, // 近期每个 IP 的失败时间戳列表
 }
 
-const FAILURE_WINDOW: Duration = Duration::from_secs(30); // 失败统计周期
-const MAX_FAILURES: usize = 2; //单个 IP 最多失败数
+const FAILURE_WINDOW: Duration = Duration::from_secs(2 * 60); // 失败统计周期
+const MAX_FAILURES: usize = 10; //单个 IP 最多失败数
 
 impl AuthState {
     pub fn new() -> Self {
@@ -32,10 +32,10 @@ impl AuthState {
     // 启动后台清理任务
     pub fn cleanup_task(self) {
         let state = self.clone();
-        let mut interval = interval(Duration::from_secs(60)); // 每分钟清理一次
+        let mut timer = interval(Duration::from_secs(60)); // 每分钟清理一次
         tokio::spawn(async move {
             loop {
-                interval.tick().await;
+                timer.tick().await;
                 let now = Instant::now();
                 state.failed.retain(|_ip, times| {
                     times.retain(|t| now.duration_since(*t) <= FAILURE_WINDOW);

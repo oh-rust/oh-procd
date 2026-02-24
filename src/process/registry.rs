@@ -1,6 +1,9 @@
 use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::collections::hash_map::Entry;
+use std::fmt::Debug;
+use std::time::Duration;
+use std::time::SystemTime;
 use std::{collections::HashMap, sync::Arc, sync::Mutex};
 use tokio::sync::mpsc;
 
@@ -34,6 +37,7 @@ pub struct ProcessEntry {
     pub start_time: Option<DateTime<Local>>, // 进程启动时间
     pub start_count: u64,                    // 程序启动次数
     pub exit_time: Option<DateTime<Local>>,  // 进程上次退出时间
+    pub last_modified: Option<SystemTime>,   // cmd 文件启动时的修改时间
 }
 
 pub struct Registry {
@@ -53,7 +57,11 @@ pub struct ProcessOut {
     pub memory_limit: u32,
     pub memory_used: String,
     pub web_address: String,
+    pub sandbox: bool,         // 使用启用沙盒
+    pub mtime: Option<String>, // cmd 文件的最后修改时间
 }
+
+const TIME_FMT: &str = "%Y-%m-%d %H:%M:%S";
 
 impl Registry {
     pub fn new() -> Self {
@@ -63,11 +71,54 @@ impl Registry {
         }
     }
 
+    pub fn watch(self: Arc<Self>, dur: Duration) {
+        if dur.as_secs() < 1 {
+            tracing::info!("restart_delay is disabled, Duration={:?}", dur);
+            return;
+        }
+        tracing::info!("restart_delay is enable, Duration={:?}", dur);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(dur).await;
+                let names: Vec<String> = self.inner.lock().unwrap().keys().cloned().collect();
+                for name in &names {
+                    self.watch_one(&name);
+                }
+            }
+        });
+    }
+
+    fn watch_one(&self, name: &str) {
+        let entry = self.find(name);
+        if entry.is_none() {
+            return;
+        }
+        let pe = entry.unwrap();
+
+        if !pe.cmd.enable || pe.state != ProcState::Running {
+            return;
+        }
+
+        let current_mtime = pe.cmd.mtime();
+        if current_mtime == pe.last_modified {
+            return;
+        }
+        tracing::info!(
+            "file changed: {} (previous: {:?}, now: {:?})",
+            pe.cmd.cmd,
+            pe.last_modified,
+            current_mtime
+        );
+        let _ = pe.control_tx.clone().try_send(ControlMsg::Restart);
+    }
+
     pub fn find(&self, name: &str) -> Option<ProcessEntry> {
         self.inner.lock().unwrap().get(name).cloned()
     }
 
     pub fn register_process(&self, name: &str, cmd: ProcessConfig, tx: mpsc::Sender<ControlMsg>) {
+        let last_modified: Option<SystemTime> = cmd.mtime();
+
         let mut registry = self.inner.lock().unwrap();
         let index: i32 = registry.len() as i32;
 
@@ -86,6 +137,7 @@ impl Registry {
                     start_time: None,
                     start_count: 0,
                     exit_time: None,
+                    last_modified: last_modified,
                 });
                 tracing::info!("register_process_insert {}", name);
             }
@@ -112,7 +164,7 @@ impl Registry {
                 entry.start_count += 1;
             }
 
-            tracing::info!("set_state {} -> ({:?}, {:?})", name, state, entry.pid.unwrap_or(0));
+            tracing::info!("set_state -> ({}, {:?}, {:?})", name, state, entry.pid.unwrap_or(0));
         } else {
             panic!("set_state {} not found", name);
         }
@@ -123,9 +175,11 @@ impl Registry {
         if let Some(entry) = registry.get_mut(name) {
             entry.state = ProcState::Running;
             entry.pid = Some(pid);
-            tracing::info!("set_state {} -> ({:?}, {:?})", name, ProcState::Running, pid);
+            tracing::info!("set_state -> ({}, {:?}, {:?})", name, ProcState::Running, pid);
             entry.start_time = Some(Local::now());
             entry.start_count += 1;
+
+            entry.last_modified = entry.cmd.mtime(); // 运行后，立即更新文件时间
         } else {
             panic!("set_running {} not found", name)
         }
@@ -142,8 +196,12 @@ impl Registry {
         entries
             .into_iter()
             .map(|(k, v)| {
-                let start_time_str = v.start_time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
-                let exit_time_str = v.exit_time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
+                let start_time_str = v.start_time.map(|t| t.format(TIME_FMT).to_string());
+                let exit_time_str = v.exit_time.map(|t| t.format(TIME_FMT).to_string());
+                let mtime_str: Option<String> = v.last_modified.map(|t| {
+                    let dt: DateTime<Local> = t.into();
+                    dt.format(TIME_FMT).to_string()
+                });
                 ProcessOut {
                     name: k.clone(),
                     state: v.state.clone(),
@@ -155,6 +213,8 @@ impl Registry {
                     memory_limit: v.cmd.memory_limit.unwrap_or(0),
                     memory_used: "".to_string(),
                     web_address: v.cmd.web_address.clone(),
+                    sandbox: !v.cmd.sandbox.is_empty(),
+                    mtime: mtime_str,
                 }
             })
             .collect()

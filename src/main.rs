@@ -4,7 +4,8 @@ mod logger;
 mod process;
 
 use std::net::SocketAddr;
-use std::{env, sync::Arc};
+use std::sync::Arc;
+use std::time::Duration;
 use tracing;
 
 use crate::process::registry;
@@ -32,22 +33,15 @@ async fn main() {
 
     let cfg = config::Config::from_file(cfg_path).unwrap();
 
-    let home = cfg.home.clone();
-    if !home.is_empty() {
-        if let Err(e) = env::set_current_dir(home.clone()) {
-            tracing::warn!("set_current_dir({:?}) failed: {:?}", home, e);
-            std::process::exit(1);
-        }
-    }
-
-    match env::current_dir() {
-        Ok(dir) => tracing::info!("current_dir: {}", dir.display()),
-        Err(e) => tracing::warn!("get current_dir failed: {}", e),
+    // 设置当前进程的工作目录
+    if let Err(e) = cfg.set_current_dir(cfg_path) {
+        tracing::warn!("set_current_dir failed: {:?}", e);
+        std::process::exit(1);
     }
 
     let reg = Arc::new(registry::Registry::new());
-    // Spawn processes
-    for process_cfg in cfg.processes.clone() {
+    // Spawn process
+    for process_cfg in cfg.process.clone() {
         process_cfg.start_spawn(reg.clone());
     }
 
@@ -56,6 +50,9 @@ async fn main() {
     let state = api::auth::AuthState::new();
     // 启动后台清理任务
     state.clone().cleanup_task();
+
+    // 启动后台，定时检查文件变化任务
+    reg.clone().watch(cfg.restart_delay.unwrap_or(Duration::from_secs(10)));
 
     // Set up web API
     let app = api::handlers::build_router()
