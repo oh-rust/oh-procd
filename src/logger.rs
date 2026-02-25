@@ -97,13 +97,14 @@ where
     }
 }
 
-pub fn setup() {
-    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
-    let subscriber = tracing_subscriber::fmt().with_env_filter(log_filter).finish();
-    tracing::subscriber::set_global_default(subscriber).unwrap();
-}
+// 初始化日志，在配置读取前，使日志能输出
+// pub fn setup() {
+//     let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
+//     let subscriber = tracing_subscriber::fmt().with_env_filter(log_filter).finish();
+//     tracing::subscriber::set_global_default(subscriber).unwrap();
+// }
 
-// 初始日志，日志多写
+// 在配置文件读取后，已经配置情况初始日志，日志多写
 pub fn init_tracing(log_dir: &str, lb: LogBuffer) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     use tracing_appender::non_blocking;
     use tracing_appender::rolling;

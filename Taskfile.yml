@@ -9,7 +9,11 @@ tasks:
   default:
     cmds:
       - cargo build -release
-  arm64:
+  arm64-linux:
     cmds: 
       # - cargo install cross
       - cross build --release --target aarch64-unknown-linux-musl
+  amd64-linux:
+    cmds: 
+      # - cargo install cross
+      - cross build --release --target x86_64-unknown-linux-musl

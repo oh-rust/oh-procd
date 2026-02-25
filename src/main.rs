@@ -21,7 +21,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    logger::setup();
+    // logger::setup();
 
     let log_buf = logger::LogBuffer::new(100);
 
