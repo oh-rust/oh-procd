@@ -59,6 +59,7 @@ pub struct ProcessOut {
     pub web_address: String,
     pub sandbox: bool,         // 使用启用沙盒
     pub mtime: Option<String>, // cmd 文件的最后修改时间
+    pub child_pids: Vec<u32>,  // 子进程的 pid 列表
 }
 
 const TIME_FMT: &str = "%Y-%m-%d %H:%M:%S";
@@ -215,6 +216,7 @@ impl Registry {
                     web_address: v.cmd.web_address.clone(),
                     sandbox: !v.cmd.sandbox.is_empty(),
                     mtime: mtime_str,
+                    child_pids: vec![],
                 }
             })
             .collect()

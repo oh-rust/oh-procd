@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oh Procd</title>
 
     <style>
@@ -81,7 +81,16 @@
             color: #666;
         }
 
-        
+        label {
+            color: gray;
+            font-size: 11px;
+        }
+
+        .child_pid {
+            color: gray;
+            font-size: 11px;
+            margin-top: 3px;
+        }
     </style>
 </head>
 
@@ -92,7 +101,7 @@
         <span><a href="/api/logs">logs</a></span>
     </div>
     <table>
-        <caption>Process List</caption>
+        <caption style="padding: 12px;font-size: 18px;background: #f5f7fa;border-bottom: 1px solid #e6e8eb;">Process List</caption>
         <thead>
             <tr>
                 <th>No.</th>
@@ -101,9 +110,8 @@
                 <th>State</th>
                 <th>Command</th>
                 <th>Memory</th>
-                <th>Start Time</th>
+                <th>Time</th>
                 <th>Start Count</th>
-                <th>Last Exit Time</th>
                 <th>Action</th>
             </tr>
         </thead>
@@ -174,27 +182,35 @@
                     }
 
 
-                    code += `</td>
-                <td>${p.pid || "-"}</td>
-                <td class="${stateClass}">${stateStr}</td>
+                    code += `</td>`;
+                    code += `<td><div>${p.pid || "-"}</div><div class="child_pid">${p.child_pids || ""}</div></td>`;
+                    code += `<td class="${stateClass}">${stateStr}</td>
                 <td title="${cmdText}">
                     <code>${cmdText}</code>
                 </td>
                 <td>`;
 
                     if (p.memory_limit > 0) {
-                        code += `<span style="white-space: nowrap">Limit: ${p.memory_limit} MB</span><br/>`;
+                        code += `<div style="white-space: nowrap"><label>Limit:</label> ${p.memory_limit} MB</div>`;
                     }
 
                     if (p.memory_used != "") {
-                        code += `<span style="white-space: nowrap">Used: ${p.memory_used || "-"}</span>`;
+                        code += `<div style="white-space: nowrap"><label>Used:</label> ${p.memory_used || "-"}</div>`;
                     }
 
                     code += `</td>
-                <td style="white-space: nowrap">${p.start_time || "-"}</td>
+                <td style="white-space: nowrap">`;
+
+                    code += `<div><label class='gray'>Start: </label>${p.start_time || "-"}</div>`;
+                    if (p.exit_time) {
+                        code += `<div><label class='gray'>&nbsp; Exit: </label>${p.exit_time || "-"}</div>`;
+                    }
+
+                    code += `</td>
+
                 <td>${p.start_count}</td>
-                <td style="white-space: nowrap">${p.exit_time || "-"}</td>
                 <td>`
+
 
                     if (p.state === "Running") {
                         code += `<button onclick="restartProcess('${p.name}')" > Restart </button>`

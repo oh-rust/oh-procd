@@ -41,9 +41,37 @@ struct ServerInfo {
     sys_total_swap: String,   //  系统，
     sys_used_swap: String,
 }
+
+use std::collections::HashMap;
+use sysinfo::Pid;
+
+/// 获取父进程 pid 的所有子进程 PID 列表和总内存（KB）
+/// 返回 (Vec<Pid>, total_memory)
+fn get_child_pids_and_total_memory(processes: &HashMap<Pid, sysinfo::Process>, parent_pid: Pid) -> (Vec<Pid>, u64) {
+    let mut pids = Vec::new();
+    let mut total_memory = 0;
+
+    // 找出直接子进程
+    for proc in processes.values().filter(|p| p.parent() == Some(parent_pid)) {
+        pids.push(proc.pid());
+        total_memory += proc.memory();
+
+        // 递归获取孙子进程
+        let (child_pids, child_memory) = get_child_pids_and_total_memory(processes, proc.pid());
+        pids.extend(child_pids);
+        total_memory += child_memory;
+    }
+
+    (pids, total_memory)
+}
+
 async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) -> Json<ListResponse<Vec<ProcessOut>>> {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
+
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let processes = sys.processes();
+
     let mut server = ServerInfo {
         start: reg.start_time(),
         memory: "".to_string(),
@@ -56,8 +84,6 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) 
         cpu_usage: 0.0,
         pid: 0,
     };
-
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     if let Some(proc) = sys.process(sysinfo::get_current_pid().unwrap()) {
         server.memory = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
@@ -77,9 +103,21 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) 
         if x.pid == 0 {
             continue;
         }
-        if let Some(proc) = sys.process(sysinfo::Pid::from_u32(x.pid)) {
-            x.memory_used = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
+        let parent_pid = sysinfo::Pid::from_u32(x.pid);
+        let (child_pids, total_memory) = get_child_pids_and_total_memory(processes, parent_pid);
+
+        if total_memory > 0 {
+            x.memory_used = format!("{:.1} MB", (total_memory as f64) / 1024.0 / 1024.0);
         }
+
+        if child_pids.len() > 0 {
+            x.child_pids = child_pids.iter().map(|p| p.as_u32()).collect();
+        }
+
+        // if let Some(proc) = sys.process(sysinfo::Pid::from_u32(x.pid)) {
+        //     x.memory_used = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
+        // }
+
         if x.web_address.contains("{") {
             x.web_address = x.web_address.replace("{HOST}", hostname);
         }
