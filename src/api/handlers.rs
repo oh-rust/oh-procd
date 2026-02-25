@@ -31,10 +31,12 @@ struct ListResponse<T> {
 
 #[derive(Serialize)]
 struct ServerInfo {
-    start: String,  // 进程启动时间
-    memory: String, // 进程使用的内存
-    cpu_usage: f32, // 进程的cpu使用情况
+    start: String, // 进程启动时间
     pid: u32,
+    self_memory: String, // 自身进程使用的内存
+    self_cpu_usage: f32, // 自身进程的cpu使用情况
+
+    used_memory: String, // 所有进程的内存使用量
 
     sys_total_memory: String, // 系统 总内存，
     sys_used_memory: String,  // 系统，使用的内存
@@ -43,7 +45,28 @@ struct ServerInfo {
 }
 
 use std::collections::HashMap;
+use std::fs;
 use sysinfo::Pid;
+
+/// 判断 PID 是否是进程组 leader（即排除线程）
+fn is_real_process(pid: Pid) -> bool {
+    // 读取 /proc/[pid]/status 的 Tgid 字段
+    let path = format!("/proc/{}/status", pid);
+    if let Ok(content) = fs::read_to_string(path) {
+        for line in content.lines() {
+            if !line.starts_with("Tgid:") {
+                continue;
+            }
+            if let Some(tgid_str) = line.split_whitespace().nth(1) {
+                if let Ok(tgid) = tgid_str.parse::<i32>() {
+                    return tgid == pid.as_u32() as i32;
+                }
+            }
+        }
+    }
+    // 如果无法读取，保守处理为 false
+    false
+}
 
 /// 获取父进程 pid 的所有子进程 PID 列表和总内存（KB）
 /// 返回 (Vec<Pid>, total_memory)
@@ -52,7 +75,16 @@ fn get_child_pids_and_total_memory(processes: &HashMap<Pid, sysinfo::Process>, p
     let mut total_memory = 0;
 
     // 找出直接子进程
-    for proc in processes.values().filter(|p| p.parent() == Some(parent_pid)) {
+    for proc in processes.values() {
+        if proc.parent() != Some(parent_pid) {
+            continue;
+        }
+        if !proc.exists() {
+            continue;
+        }
+        if !is_real_process(proc.pid()) {
+            continue;
+        }
         pids.push(proc.pid());
         total_memory += proc.memory();
 
@@ -74,20 +106,21 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) 
 
     let mut server = ServerInfo {
         start: reg.start_time(),
-        memory: "".to_string(),
+        self_memory: "".to_string(),
+        self_cpu_usage: 0.0,
+        pid: 0,
+
+        used_memory: "".to_string(),
 
         sys_total_memory: format!("{:.1} MB", (sys.total_memory() as f64) / 1024.0 / 1024.0),
         sys_used_memory: format!("{:.1} MB", (sys.used_memory() as f64) / 1024.0 / 1024.0),
         sys_total_swap: format!("{:.1} MB", (sys.total_swap() as f64) / 1024.0 / 1024.0),
         sys_used_swap: format!("{:.1} MB", (sys.used_swap() as f64) / 1024.0 / 1024.0),
-
-        cpu_usage: 0.0,
-        pid: 0,
     };
 
     if let Some(proc) = sys.process(sysinfo::get_current_pid().unwrap()) {
-        server.memory = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
-        server.cpu_usage = proc.cpu_usage();
+        server.self_memory = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
+        server.self_cpu_usage = proc.cpu_usage();
         server.pid = proc.pid().as_u32();
     }
 
@@ -99,6 +132,7 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) 
     let hostname = host.split(':').next().unwrap_or("");
 
     let mut items = reg.list();
+    let mut all_memory: u64 = 0;
     for x in items.iter_mut() {
         if x.pid == 0 {
             continue;
@@ -106,22 +140,27 @@ async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) 
         let parent_pid = sysinfo::Pid::from_u32(x.pid);
         let (child_pids, total_memory) = get_child_pids_and_total_memory(processes, parent_pid);
 
+        let mut total_memory = total_memory;
+        if let Some(proc) = sys.process(sysinfo::Pid::from_u32(x.pid)) {
+            total_memory += proc.memory();
+        }
+        all_memory += total_memory;
+
         if total_memory > 0 {
             x.memory_used = format!("{:.1} MB", (total_memory as f64) / 1024.0 / 1024.0);
         }
 
         if child_pids.len() > 0 {
             x.child_pids = child_pids.iter().map(|p| p.as_u32()).collect();
+            x.child_pids.sort();
         }
-
-        // if let Some(proc) = sys.process(sysinfo::Pid::from_u32(x.pid)) {
-        //     x.memory_used = format!("{:.1} MB", (proc.memory() as f64) / 1024.0 / 1024.0);
-        // }
 
         if x.web_address.contains("{") {
             x.web_address = x.web_address.replace("{HOST}", hostname);
         }
     }
+
+    server.used_memory = format!("{:.1} MB", (all_memory as f64) / 1024.0 / 1024.0);
 
     let val: ListResponse<Vec<ProcessOut>> = ListResponse {
         code: 0,
