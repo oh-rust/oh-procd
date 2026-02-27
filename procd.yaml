@@ -1,7 +1,7 @@
 # home: "/app"    # 工作目录，可选
 # log_dir: "logs" # 日志目录，可选，默认为空，当不为空时，每个子进程创建一个对应的目录，并将stderr 和 stdout 存放进去
 # envs: ["k1=v1"] # 全局环境变量，可选
-# restart_delay: "10s" # 二进制文件变化后，最长自动重启的时间间隔，可选，默认 0, 禁用
+restart_delay: "10s" # 二进制文件变化后，最长自动重启的时间间隔，可选，默认 0, 禁用
 # enable_sandbox: true # 使用沙盒机制，可选，默认为 true，依赖 sandbox 配置段落
 
 # 必填配置，管理页面的 http server
@@ -31,12 +31,13 @@ sandbox:
       --ro-bind, /lib, /lib,
       --ro-bind, /lib64, /lib64,
       --ro-bind, /sys/fs/cgroup, /sys/fs/cgroup,
-      --ro-bind, /etc/localtime, /etc/localtime,
-      --ro-bind, /etc/resolv.conf, /etc/resolv.conf,
-      --ro-bind, /etc/hosts, /etc/hosts,
-      --ro-bind, /etc/ssl, /etc/ssl,
-      --ro-bind, /etc/pki, /etc/pki,
-      --ro-bind, /etc/nsswitch.conf, /etc/nsswitch.conf,
+      --ro-bind, /etc, /etc,
+      # --ro-bind, /etc/localtime, /etc/localtime,
+      # --ro-bind, /etc/resolv.conf, /etc/resolv.conf,
+      # --ro-bind, /etc/hosts, /etc/hosts,
+      # --ro-bind, /etc/ssl, /etc/ssl,
+      # --ro-bind, /etc/pki, /etc/pki,
+      # --ro-bind, /etc/nsswitch.conf, /etc/nsswitch.conf,
       --proc, /proc,
       --tmpfs, /tmp,
       --tmpfs, /run,

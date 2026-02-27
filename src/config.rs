@@ -1,6 +1,8 @@
-use std::{env, fs, sync::Arc};
+use std::path::Path;
+use std::path::PathBuf;
+use std::{env, sync::Arc};
 
-use anyhow::Ok;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tokio::time::Duration;
 
@@ -86,7 +88,7 @@ pub struct ProcessConfig {
     pub cmd: String, // 程序命令，必填
 
     #[serde(default)]
-    pub args: Vec<String>, // 命令参数，可选
+    pub args: Vec<String>, // 命令参数，可选, 可能是 ./app （从 home 目录查找） 或者 app （从Path查找）或者 /opt/app （绝对地址）
 
     #[serde(default)]
     pub envs: Vec<String>, // 额外的环境变量值
@@ -190,9 +192,11 @@ impl Config {
         // 打印当前目录
         let dir = env::current_dir()?;
         tracing::info!("current_dir: {}", dir.display());
-        Ok(())
+        anyhow::Ok(())
     }
 }
+
+use anyhow::bail;
 
 impl ProcessConfig {
     pub fn start_spawn(&self, reg: Arc<Registry>) {
@@ -200,24 +204,38 @@ impl ProcessConfig {
         tokio::spawn(process::supervisor::supervise(cfg, reg));
     }
 
-    pub fn mtime(&self) -> Option<std::time::SystemTime> {
-        let path = which::which(&self.cmd).ok();
-        if path.is_none() {
-            return None;
+    // cmd_abs_path 获取命令的绝对路径，不检查文件是否存在
+    pub fn cmd_abs_path(&self) -> anyhow::Result<PathBuf> {
+        if self.cmd.trim().is_empty() {
+            bail!("cmd is empty");
         }
-        fs::metadata(path.unwrap())
-            .and_then(|m| m.modified())
-            .map_err(|e| {
-                tracing::warn!("read metadata({}) failed: {:?}", self.cmd, e);
-            })
-            .ok()
-    }
 
-    // pub fn cmd_path(&self) -> String {
-    //     which::which(&self.cmd)
-    //         .map(|p| p.to_string_lossy().into_owned())
-    //         .unwrap_or_else(|_e| self.cmd.clone())
-    // }
+        let cmd_path = Path::new(&self.cmd);
+
+        // 1️⃣ 绝对路径
+        if cmd_path.is_absolute() {
+            return anyhow::Ok(cmd_path.to_path_buf());
+        }
+
+        // 解析 home
+        let home_dir = if self.home.trim().is_empty() {
+            env::current_dir().context("failed to get current directory")?
+        } else {
+            PathBuf::from(&self.home)
+        };
+
+        // 2️⃣ 含路径分隔符（./app 或 bin/app）
+        if self.cmd.contains(std::path::MAIN_SEPARATOR) {
+            let abs = home_dir.join(cmd_path);
+            return anyhow::Ok(abs);
+        }
+
+        // 3️⃣ 纯命令名 → 从 PATH 查找
+        let found = which::which_in(&self.cmd, env::var_os("PATH"), &home_dir)
+            .with_context(|| format!("failed to find '{}' in PATH", self.cmd))?;
+
+        anyhow::Ok(found)
+    }
 
     pub fn get_cmd(&self) -> std::process::Command {
         let mut args = self.sandbox.clone();

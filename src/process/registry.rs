@@ -32,6 +32,7 @@ pub struct ProcessEntry {
     pub index: i32, // 排序
     pub state: ProcState,
     pub cmd: ProcessConfig,
+    pub cmd_abs_path: Option<String>, //命令的绝对地址
     pub pid: Option<u32>,
     pub control_tx: mpsc::Sender<ControlMsg>,
     pub start_time: Option<DateTime<Local>>, // 进程启动时间
@@ -49,6 +50,7 @@ pub struct Registry {
 pub struct ProcessOut {
     pub name: String,
     pub cmd: ProcessConfig,
+    pub cmd_abs: String,
     pub state: ProcState,
     pub pid: u32,
     pub start_time: Option<String>,
@@ -60,6 +62,22 @@ pub struct ProcessOut {
     pub sandbox: bool,         // 使用启用沙盒
     pub mtime: Option<String>, // cmd 文件的最后修改时间
     pub child_pids: Vec<u32>,  // 子进程的 pid 列表
+}
+
+impl ProcessEntry {
+    fn get_cmd_mtime(&self) -> Option<std::time::SystemTime> {
+        if self.cmd_abs_path.is_none() {
+            return None;
+        }
+
+        let path = self.cmd_abs_path.clone().unwrap();
+        std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .map_err(|e| {
+                tracing::warn!("read metadata({}) failed: {:?}", &path, e);
+            })
+            .ok()
+    }
 }
 
 const TIME_FMT: &str = "%Y-%m-%d %H:%M:%S";
@@ -101,8 +119,12 @@ impl Registry {
         if !pe.cmd.enable || pe.state != ProcState::Running {
             return;
         }
+        if pe.cmd_abs_path.is_none() {
+            tracing::warn!(name, "watch_one cmd_abs_path is null");
+            return;
+        }
 
-        let current_mtime = pe.cmd.mtime();
+        let current_mtime = pe.get_cmd_mtime();
         if current_mtime.is_none() {
             tracing::warn!("watch_one({}) get_current_mtime is null", name);
         }
@@ -124,8 +146,6 @@ impl Registry {
     }
 
     pub fn register_process(&self, name: &str, cmd: ProcessConfig, tx: mpsc::Sender<ControlMsg>) {
-        let last_modified: Option<SystemTime> = cmd.mtime();
-
         let mut registry = self.inner.lock().unwrap();
         let index: i32 = registry.len() as i32;
 
@@ -135,17 +155,23 @@ impl Registry {
                 tracing::info!("register_process_update {}", name);
             }
             Entry::Vacant(e) => {
-                e.insert(ProcessEntry {
+                let abs_path: Option<String> = cmd.cmd_abs_path().ok().map(|p| p.to_string_lossy().to_string());
+
+                let mut pe = ProcessEntry {
                     index: index + 1,
                     state: ProcState::Ready,
                     cmd: cmd,
+                    cmd_abs_path: abs_path,
                     pid: None,
                     control_tx: tx,
                     start_time: None,
                     start_count: 0,
                     exit_time: None,
-                    last_modified: last_modified,
-                });
+                    last_modified: None,
+                };
+                pe.last_modified = pe.get_cmd_mtime();
+
+                e.insert(pe);
                 tracing::info!("register_process_insert {}", name);
             }
         }
@@ -186,7 +212,7 @@ impl Registry {
             entry.start_time = Some(Local::now());
             entry.start_count += 1;
 
-            entry.last_modified = entry.cmd.mtime(); // 运行后，立即更新文件时间
+            entry.last_modified = entry.get_cmd_mtime(); // 运行后，立即更新文件时间
         } else {
             panic!("set_running {} not found", name)
         }
@@ -213,6 +239,7 @@ impl Registry {
                     name: k.clone(),
                     state: v.state.clone(),
                     cmd: v.cmd.clone(),
+                    cmd_abs: v.cmd_abs_path.unwrap_or("".to_string()),
                     pid: v.pid.unwrap_or(0),
                     start_time: start_time_str,
                     start_count: v.start_count,
