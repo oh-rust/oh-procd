@@ -1,80 +1,79 @@
-# 必填配置，管理页面的 http server
-
 # home: "/app"    # 工作目录，可选
-log_dir: "logs" # 日志目录，可选，默认为空，当不为空时，每个子进程创建一个对应的目录，并将stderr 和 stdout 存放进去
+# log_dir: "logs" # 日志目录，可选，默认为空，当不为空时，每个子进程创建一个对应的目录，并将stderr 和 stdout 存放进去
 # envs: ["k1=v1"] # 全局环境变量，可选
-# restart_delay: "10s" # 二进制文件变化后，最长自动重启的时间间隔，可选，默认 10秒
+# restart_delay: "10s" # 二进制文件变化后，最长自动重启的时间间隔，可选，默认 0, 禁用
 # enable_sandbox: true # 使用沙盒机制，可选，默认为 true，依赖 sandbox 配置段落
 
+# 必填配置，管理页面的 http server
 http:
   addr: "127.0.0.1:8080" 
 
-# 可选配置，认证账号
+# 可选配置，http server 页面的认证账号
 # auth:
 #   username: admin
 #   password: 123
 
-
+# 运行子进程(process) 的安全沙盒
 sandbox:
-  - name: default
-    cmd:
-      - bwrap
-      - --ro-bind
-      - /bin
-      - /bin
-      - --ro-bind
-      - /usr
-      - /usr
-      - --ro-bind
-      - /lib
-      - /lib
-      - --ro-bind
-      - /lib64
-      - /lib64
-      - --proc
-      - /proc
-      - --tmpfs
-      - /tmp
-      - --dev
-      - /dev
-      - --die-with-parent
-      - --ro-bind
-      - "{Process-Home}"
-      - /app
-      - --chdir
-      - /app
+  - name: default   # 沙盒的名称，process[x].use_sandbox 里填写的值
+    # enable: true  # 是否启用，默认为 true
+    cmd: [          # 沙盒程序的命令，最终子进程以 bwrap xxx process—cmd process—arg 这种方式启动
+      bwrap,
+      --unshare-ipc,
+      --unshare-user,
+      --unshare-uts,
+      --hostname, "vbox",
+      --unshare-pid,
+      --die-with-parent,
+      --new-session,
+      --ro-bind, /bin, /bin,
+      --ro-bind, /usr, /usr,
+      --ro-bind, /lib, /lib,
+      --ro-bind, /lib64, /lib64,
+      --ro-bind, /sys/fs/cgroup, /sys/fs/cgroup,
+      --ro-bind, /etc/localtime, /etc/localtime,
+      --ro-bind, /etc/resolv.conf, /etc/resolv.conf,
+      --ro-bind, /etc/hosts, /etc/hosts,
+      --ro-bind, /etc/ssl, /etc/ssl,
+      --ro-bind, /etc/pki, /etc/pki,
+      --ro-bind, /etc/nsswitch.conf, /etc/nsswitch.conf,
+      --proc, /proc,
+      --tmpfs, /tmp,
+      --tmpfs, /run,
+      --dev, /dev,
+      --setenv, TMPDIR, /tmp,
+      --setenv, PATH, "/usr/bin:/bin",
+      --bind, "{Process-Home}",/app,
+      --chdir, /app
+    ]
 
-  - name: firejail
-    cmd:
-      - firejail
-      - --private
-      - --whitelist
-      - "{Process-Home}"
-      - --chdir
-      - "{Process-Home}"
 
 process:
-  - name: web-api
-    cmd: "python3"
-    args: ["-m", "http.server","8090"]
-    # home: /tmp
+  - name: web-api    # 名称，必须唯一
+    cmd: "python3"   # 二进制程序地址，必填
+    args: ["-m", "http.server","8090"] #参数，可选
+    # home: /tmp     # 此子进程的工作目录，运行时相当于：cd /tmp && cmd args...
     # max_run: "10s"  # 最长持续运行时长
     # next: "30s" # 退出后，下次运行等待时长
-    memory_limit: 100 # 内存大小限制，单位 MB，值 > 0 时生效，若使用超限，可能 panic 或崩溃
-    web_address: "http://{HOST}:8090/"
+    # memory_limit: 100 # 内存大小限制，单位 MB，值 > 0 时生效，若使用超限，可能 panic 或崩溃，使用沙盒时不能填写
+    web_address: "http://{HOST}:8090/"   # 可选，此子进程的 web 页面
     # enable:true # 是否启用，可选，默认 true
-    # use_sandbox: "default" # 使用指定的沙盒，可选，默认使用第一个。若值为 no 则不使用沙盒
+    # use_sandbox: "default" # 使用指定的沙盒名称，可选，默认使用第一个。若值为 no 则不使用沙盒
     # sandbox:["firejail"] # 专属沙盒命令，可选，和 use_sandbox 使用一个即可。
     # output_dir: "/app/logs/web-api" # 保存 stderr 和 stdout 的目录，可选。有值时则不适应全局配置的 log_dir 的子目录
-    redirect_output: true # 是否重定向 stderr 和 stdout，可选，默认为 false
+    # redirect_output: true # 是否重定向 stderr 和 stdout，可选，默认为 false
 
-  - name: sleep
-    cmd: "sleep"
-    args: ["10"]
+  - name: hello-1
+    cmd: "./hello.sh"
+    # args: ["10"]
     # home: /tmp
     # enable: false
     # max_run: "10s"  # 最长持续运行时长
-    next: "30s" # 退出后，下次运行等待时长
+    # next: "30s" # 退出后，下次运行等待时长
+
+  - name: hello-2
+    cmd: "./hello.sh"
+    use_sandbox: "no"  # 不使用沙盒启动进程
     
 
   - name: not-found

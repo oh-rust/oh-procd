@@ -117,7 +117,7 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
     let (tx, mut rx) = mpsc::channel::<ControlMsg>(8);
     registry.register_process(&cfg.name, cfg.clone(), tx);
     if !cfg.enable {
-        tracing::warn!("enable=false, skipped");
+        tracing::warn!(name = cfg.name, "enable=false, skipped");
         return;
     }
 

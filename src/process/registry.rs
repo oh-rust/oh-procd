@@ -72,12 +72,13 @@ impl Registry {
         }
     }
 
+    // 监听二进制文件变化，并自动 restart
     pub fn watch(self: Arc<Self>, dur: Duration) {
         if dur.as_secs() < 1 {
             tracing::info!("restart_delay is disabled, Duration={:?}", dur);
             return;
         }
-        tracing::info!("restart_delay is enable, Duration={:?}", dur);
+        tracing::info!("restart_delay is enable, watch Duration={:?}", dur);
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(dur).await;
@@ -92,6 +93,7 @@ impl Registry {
     fn watch_one(&self, name: &str) {
         let entry = self.find(name);
         if entry.is_none() {
+            tracing::warn!("watch_one  find({}) is null", name);
             return;
         }
         let pe = entry.unwrap();
@@ -101,11 +103,15 @@ impl Registry {
         }
 
         let current_mtime = pe.cmd.mtime();
+        if current_mtime.is_none() {
+            tracing::warn!("watch_one({}) get_current_mtime is null", name);
+        }
         if current_mtime == pe.last_modified {
             return;
         }
         tracing::info!(
-            "file changed: {} (previous: {:?}, now: {:?})",
+            "watch_one({}) file changed: {} (previous: {:?}, now: {:?})",
+            name,
             pe.cmd.cmd,
             pe.last_modified,
             current_mtime
