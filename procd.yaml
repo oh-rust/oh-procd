@@ -13,7 +13,7 @@ http:
 #   username: admin
 #   password: 123
 
-# 运行子进程(process) 的安全沙盒
+# 运行子进程(process) 的安全沙盒，可选配置
 sandbox:
   - name: default   # 沙盒的名称，process[x].use_sandbox 里填写的值
     # enable: true  # 是否启用，默认为 true
