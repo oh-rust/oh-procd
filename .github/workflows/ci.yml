@@ -36,7 +36,7 @@ jobs:
         
          mkdir -p output || true
          cp target/x86_64-musl/x86_64-unknown-linux-musl/release/oh-procd output/oh-procd-x86_64-linux-musl
-         ls output
+         ls output -l
       
       - name: Build aarch64-musl
         run: |
@@ -44,7 +44,7 @@ jobs:
 
          mkdir -p output || true
          mv target/aarch64-musl/aarch64-unknown-linux-musl/release/oh-procd output/oh-procd-aarch64-linux-musl
-         ls output
+         ls output -l
 
       # 发布 Nightly Release
       - name: Publish Nightly Release
