@@ -28,11 +28,19 @@ jobs:
         run: |
           cargo install cross
 
-      # 构建多个平台的目标文件
-      - name: Build for multiple targets
+      - name: Build x86_64-musl
         run: |
-            cross build --release --target x86_64-unknown-linux-musl --target-dir target/x86_64-musl
-            cross build --release --target aarch64-unknown-linux-musl --target-dir target/aarch64-musl
+         cross build --release --target x86_64-unknown-linux-musl --target-dir target/x86_64-musl
+        
+         mkdir -p output || true
+         cp target/x86_64-musl/x86_64-unknown-linux-musl/release/oh-procd output/oh-procd-x86_64-linux-musl
+      
+      - name: Build aarch64-musl
+        run: |
+         cross build --release --target aarch64-unknown-linux-musl --target-dir target/aarch64-musl
+
+         mkdir -p output || true
+         mv target/aarch64-musl/aarch64-unknown-linux-musl/release/oh-procd output/oh-procd-aarch64-linux-musl
 
       # 发布 Nightly Release
       - name: Publish Nightly Release
@@ -44,8 +52,8 @@ jobs:
 
           # 创建或覆盖 nightly release
           gh release create nightly \
-            target/x86_64-musl/x86_64-unknown-linux-musl/release/oh-procd-x86_64-linux-musl \
-            target/aarch64-musl/aarch64-unknown-linux-musl/release/oh-procd-aarch64-linux-musl \
+            output/oh-procd-x86_64-linux-musl \
+            output/oh-procd-aarch64-linux-musl \
             --title "Nightly Release" \
             --notes "Automatically built from master commit $GITHUB_SHA on $(date -u +'%Y-%m-%d %H:%M:%S UTC')" \
             --prerelease
