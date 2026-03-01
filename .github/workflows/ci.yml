@@ -34,12 +34,18 @@ jobs:
             cross build --release --target x86_64-unknown-linux-musl --target-dir target/x86_64-musl
             cross build --release --target aarch64-unknown-linux-musl --target-dir target/aarch64-musl
 
-      # 发布到 GitHub Release，文件名中包含系统和架构
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            target/x86_64-musl/x86_64-unknown-linux-musl/release/oh-procd-x86_64-linux-musl
-            target/aarch64-musl/aarch64-unknown-linux-musl/release/oh-procd-aarch64-linux-musl
+      # 发布 Nightly Release
+      - name: Publish Nightly Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 删除已有 nightly release（如果存在）
+          gh release delete nightly -y || true
+
+          # 创建或覆盖 nightly release
+          gh release create nightly \
+            target/x86_64-musl/x86_64-unknown-linux-musl/release/oh-procd-x86_64-linux-musl \
+            target/aarch64-musl/aarch64-unknown-linux-musl/release/oh-procd-aarch64-linux-musl \
+            --title "Nightly Release" \
+            --notes "Automatically built from master commit $GITHUB_SHA on $(date -u +'%Y-%m-%d %H:%M:%S UTC')" \
+            --prerelease
