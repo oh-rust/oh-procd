@@ -1,0 +1,42 @@
+name: Build and Publish
+
+on:
+  push:
+    branches:
+      - master  # 监听 master 分支的推送事件
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # 在最新版本的 Ubuntu 上运行 CI
+
+    steps:
+      # 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 设置 Rust 环境
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+
+      # 设置 cross (如果需要跨平台构建)
+      - name: Install cross
+        run: |
+          cargo install cross
+
+      # 构建多个平台的目标文件
+      - name: Build for multiple targets
+        run: |
+            cross build --release --target x86_64-unknown-linux-musl
+            cross build --release --target aarch64-unknown-linux-musl
+
+      # 发布到 GitHub Release，文件名中包含系统和架构
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/x86_64-unknown-linux-musl/release/oh-procd-x86_64-linux-musl
+            target/aarch64-unknown-linux-musl/release/oh-procd-aarch64-linux-musl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
