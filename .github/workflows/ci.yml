@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest  # 在最新版本的 Ubuntu 上运行 CI
+    permissions:
+      contents: write
 
     steps:
       # 检出代码
@@ -34,6 +36,7 @@ jobs:
         
          mkdir -p output || true
          cp target/x86_64-musl/x86_64-unknown-linux-musl/release/oh-procd output/oh-procd-x86_64-linux-musl
+         ls output
       
       - name: Build aarch64-musl
         run: |
@@ -41,6 +44,7 @@ jobs:
 
          mkdir -p output || true
          mv target/aarch64-musl/aarch64-unknown-linux-musl/release/oh-procd output/oh-procd-aarch64-linux-musl
+         ls output
 
       # 发布 Nightly Release
       - name: Publish Nightly Release
