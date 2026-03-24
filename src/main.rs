@@ -15,7 +15,7 @@ use clap::Parser;
 #[command(author, version, about)]
 struct Args {
     /// 配置文件路径
-    #[arg(short, long, value_name = "c", default_value = "procd.yaml")]
+    #[arg(short, long, value_name = "c", default_value = "procd.yml")]
     pub config: String,
 }
 

@@ -18,9 +18,6 @@ use {
     std::os::unix::process::CommandExt,
 };
 
-#[cfg(windows)]
-use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess};
-
 #[cfg(unix)]
 fn kill_process(pid: u32) {
     if pid == 0 {
@@ -36,6 +33,7 @@ fn kill_process(pid: u32) {
     if pid == 0 {
         return;
     }
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess};
     unsafe {
         let handle = OpenProcess(1, 0, pid);
         TerminateProcess(handle, 1);
