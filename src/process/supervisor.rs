@@ -103,7 +103,8 @@ fn setup_memory_limit(name: &str, mem_limit_mb: u32) -> std::io::Result<()> {
     }
 
     let bytes: rlim_t = (mem_limit_mb * 1024 * 1024) as u64;
-    setrlimit(Resource::RLIMIT_AS, bytes, bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    setrlimit(Resource::RLIMIT_AS, bytes, bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     tracing::info!("{}: memory limit set to {} MB", name, mem_limit_mb);
     Ok(())
 }

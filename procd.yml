@@ -6,7 +6,10 @@ restart_delay: "10s" # 二进制文件变化后，最长自动重启的时间间
 
 # 必填配置，管理页面的 http server
 http:
-  addr: "127.0.0.1:8080" 
+  addr: "127.0.0.1:8080"
+
+# 可选配置，是否自动检查 cmd 是否有可执行权限，没有则自动添加
+auto_chmod_x: true
 
 # 可选配置，http server 页面的认证账号
 # auth:

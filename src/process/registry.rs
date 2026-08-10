@@ -155,7 +155,10 @@ impl Registry {
                 tracing::info!("register_process_update {}", name);
             }
             Entry::Vacant(e) => {
-                let abs_path: Option<String> = cmd.cmd_abs_path().ok().map(|p| p.to_string_lossy().to_string());
+                let abs_path: Option<String> = cmd
+                    .cmd_abs_path()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
 
                 let mut pe = ProcessEntry {
                     index: index + 1,
@@ -178,7 +181,11 @@ impl Registry {
     }
 
     pub fn get_control(&self, name: &str) -> Option<tokio::sync::mpsc::Sender<ControlMsg>> {
-        self.inner.lock().unwrap().get(name).map(|e| e.control_tx.clone())
+        self.inner
+            .lock()
+            .unwrap()
+            .get(name)
+            .map(|e| e.control_tx.clone())
     }
 
     pub fn set_state(&self, name: &str, state: ProcState) {
@@ -197,7 +204,12 @@ impl Registry {
                 entry.start_count += 1;
             }
 
-            tracing::info!("set_state -> ({}, {:?}, {:?})", name, state, entry.pid.unwrap_or(0));
+            tracing::info!(
+                "set_state -> ({}, {:?}, {:?})",
+                name,
+                state,
+                entry.pid.unwrap_or(0)
+            );
         } else {
             panic!("set_state {} not found", name);
         }
@@ -208,7 +220,12 @@ impl Registry {
         if let Some(entry) = registry.get_mut(name) {
             entry.state = ProcState::Running;
             entry.pid = Some(pid);
-            tracing::info!("set_state -> ({}, {:?}, {:?})", name, ProcState::Running, pid);
+            tracing::info!(
+                "set_state -> ({}, {:?}, {:?})",
+                name,
+                ProcState::Running,
+                pid
+            );
             entry.start_time = Some(Local::now());
             entry.start_count += 1;
 
@@ -221,7 +238,10 @@ impl Registry {
     pub fn list(&self) -> Vec<ProcessOut> {
         let entries: Vec<(String, ProcessEntry)> = {
             let registry = self.inner.lock().unwrap();
-            let mut ret: Vec<_> = registry.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let mut ret: Vec<_> = registry
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             ret.sort_by_key(|(_, v)| v.index);
             ret
         };

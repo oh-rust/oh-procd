@@ -48,7 +48,8 @@ impl<'a> Visit for StringVisitor<'a> {
         if field.name() == "message" {
             self.output.push_str(&format!("{:?}", value));
         } else {
-            self.output.push_str(&format!("{}={:?}", field.name(), value));
+            self.output
+                .push_str(&format!("{}={:?}", field.name(), value));
         }
     }
 }
@@ -65,7 +66,11 @@ impl<S> Layer<S> for BufferLayer
 where
     S: tracing::Subscriber,
 {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
         // let msg = format!("{:?}", event);
         // self.buffer.push(msg);
 
@@ -105,7 +110,10 @@ where
 // }
 
 // 在配置文件读取后，已经配置情况初始日志，日志多写
-pub fn init_tracing(log_dir: &str, lb: LogBuffer) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+pub fn init_tracing(
+    log_dir: &str,
+    lb: LogBuffer,
+) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     use tracing_appender::non_blocking;
     use tracing_appender::rolling;
     use tracing_subscriber::fmt;
@@ -113,7 +121,8 @@ pub fn init_tracing(log_dir: &str, lb: LogBuffer) -> Option<tracing_appender::no
 
     let log_dir: &str = log_dir.trim();
 
-    let log_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
+    let log_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("trace,tower_http=trace"));
 
     // 控制台 layer（带颜色）
     let console_layer = fmt::layer().with_ansi(true).with_target(true);

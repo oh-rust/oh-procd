@@ -6,6 +6,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tokio::time::Duration;
 
+use crate::fs;
 use crate::process;
 use crate::process::registry::Registry;
 
@@ -35,6 +36,9 @@ pub struct Config {
 
     #[serde(default = "default_true")]
     pub enable_sandbox: bool, // 是否进入沙盒以安全运行,若为false，则所有子进程都为 false
+
+    #[serde(default)]
+    pub auto_chmod_x: Option<bool>, // 是否自动检查二进制有可执行权限
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -122,6 +126,9 @@ pub struct ProcessConfig {
 
     #[serde(default)]
     pub sandbox: Vec<String>, // 沙盒的命令
+
+    #[serde(default)]
+    pub auto_chmod_x: Option<bool>, // 是否自动检查二进制有可执行权限
 }
 
 fn default_true() -> bool {
@@ -147,11 +154,18 @@ impl Config {
                 pc.sandbox.clear();
             } else if pc.sandbox.is_empty() {
                 let name = &pc.use_sandbox;
-                if let Some(c) = sbox.iter().find(|c| c.enable && (c.name.eq(name) || name.is_empty())) {
+                if let Some(c) = sbox
+                    .iter()
+                    .find(|c| c.enable && (c.name.eq(name) || name.is_empty()))
+                {
                     pc.sandbox = c.get_cmd();
                 } else {
                     tracing::warn!("use_sandbox={} not found, skipped", &pc.use_sandbox)
                 }
+            }
+
+            if pc.auto_chmod_x.is_none() && !self.auto_chmod_x.is_none() {
+                pc.auto_chmod_x = self.auto_chmod_x.clone()
             }
         }
     }
@@ -238,6 +252,7 @@ impl ProcessConfig {
     }
 
     pub fn get_cmd(&self) -> std::process::Command {
+        self.try_chmod_x();
         let mut args = self.sandbox.clone();
         args.push(self.cmd.clone());
         for a in &self.args.clone() {
@@ -272,5 +287,27 @@ impl ProcessConfig {
             cmd.current_dir(&self.home);
         }
         return cmd;
+    }
+
+    fn try_chmod_x(&self) {
+        if !self.auto_chmod_x.unwrap_or(false) {
+            return;
+        }
+        if !self.cmd.starts_with("./") {
+            return;
+        }
+        let ap = self.cmd_abs_path();
+        if ap.is_err() {
+            return;
+        }
+        let apt = ap.unwrap();
+        match fs::permission::ensure_executable(apt.clone()) {
+            Ok(_) => {
+                tracing::info!("ensure_executable {} success", apt.display());
+            }
+            Err(e) => {
+                tracing::error!("ensure_executable {} failed: {}", apt.display(), e);
+            }
+        }
     }
 }

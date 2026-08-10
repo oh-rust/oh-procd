@@ -70,7 +70,10 @@ fn is_real_process(pid: Pid) -> bool {
 
 /// 获取父进程 pid 的所有子进程 PID 列表和总内存（KB）
 /// 返回 (Vec<Pid>, total_memory)
-fn get_child_pids_and_total_memory(processes: &HashMap<Pid, sysinfo::Process>, parent_pid: Pid) -> (Vec<Pid>, u64) {
+fn get_child_pids_and_total_memory(
+    processes: &HashMap<Pid, sysinfo::Process>,
+    parent_pid: Pid,
+) -> (Vec<Pid>, u64) {
     let mut pids = Vec::new();
     let mut total_memory = 0;
 
@@ -97,7 +100,10 @@ fn get_child_pids_and_total_memory(processes: &HashMap<Pid, sysinfo::Process>, p
     (pids, total_memory)
 }
 
-async fn list_processes(Extension(reg): Extension<Arc<Registry>>, req: Request) -> Json<ListResponse<Vec<ProcessOut>>> {
+async fn list_processes(
+    Extension(reg): Extension<Arc<Registry>>,
+    req: Request,
+) -> Json<ListResponse<Vec<ProcessOut>>> {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
 
@@ -249,13 +255,15 @@ pub fn build_router() -> Router {
         .route("/api/process/{name}/kill", post(kill_process))
         .route("/api/process/{name}/start", post(start_process))
         .layer(middleware::from_fn(basic_auth))
-        .layer(TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
-            let client_addr = req
-                .extensions()
-                .get::<ConnectInfo<SocketAddr>>()
-                .map(|ci| ci.0.to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            let log_id: u64 = rand::rng().random_range(1..9999999);
-            tracing::info_span!("HTTP", log_id = log_id, client = client_addr)
-        }))
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
+                let client_addr = req
+                    .extensions()
+                    .get::<ConnectInfo<SocketAddr>>()
+                    .map(|ci| ci.0.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let log_id: u64 = rand::rng().random_range(1..9999999);
+                tracing::info_span!("HTTP", log_id = log_id, client = client_addr)
+            }),
+        )
 }

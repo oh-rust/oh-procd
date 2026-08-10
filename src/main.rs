@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod fs;
 mod logger;
 mod process;
 
@@ -54,7 +55,8 @@ async fn main() {
     state.clone().cleanup_task();
 
     // 启动后台，定时检查文件变化任务
-    reg.clone().watch(cfg.restart_delay.unwrap_or(Duration::from_secs(0)));
+    reg.clone()
+        .watch(cfg.restart_delay.unwrap_or(Duration::from_secs(0)));
 
     // Set up web API
     let app = api::handlers::build_router()
@@ -67,7 +69,10 @@ async fn main() {
 
     let addr = &cfg.http.addr;
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .await
-        .unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
