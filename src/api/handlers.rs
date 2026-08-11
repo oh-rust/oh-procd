@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{self, ConnectInfo, Extension, Request},
+    extract::{self, ConnectInfo, Extension, Query, Request},
     http::header,
     middleware, response,
     routing::{get, post},
@@ -240,8 +240,32 @@ async fn start_process(
     }
 }
 
-async fn logs(Extension(lb): Extension<crate::logger::LogBuffer>) -> Json<Vec<String>> {
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct LogQuery {
+    q: Option<String>,
+}
+
+async fn logs(
+    Extension(lb): Extension<crate::logger::LogBuffer>,
+    Query(query): Query<LogQuery>,
+) -> Json<Vec<String>> {
     let mut lines = lb.get_logs();
+    if let Some(q) = query.q {
+        let keywords: Vec<String> = q
+            .split(|c| c == '+' || c == ' ') // 使用 空格或者+分割
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_lowercase())
+            .collect();
+
+        if !keywords.is_empty() {
+            lines.retain(|line| {
+                let line = line.to_lowercase();
+                keywords.iter().all(|k| line.contains(k))
+            });
+        }
+    }
     lines.reverse();
     Json(lines)
 }

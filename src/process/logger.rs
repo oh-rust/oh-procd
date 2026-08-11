@@ -23,6 +23,9 @@ pub fn pipe_logger(
         let mut file: Option<std::fs::File> = None;
         let mut active_hour = current_hour();
 
+        let worker_span = tracing::trace_span!("worker", name = &cfg.name, pid = pid, from = kind);
+        let _enter = worker_span.enter();
+
         loop {
             let n = match reader.read(&mut buf) {
                 Ok(0) => break, //  EOF
@@ -36,7 +39,7 @@ pub fn pipe_logger(
             // 额外往 tracing 输出一份
             {
                 let s = String::from_utf8_lossy(&buf[..n]);
-                tracing::debug!(from = kind, pid = pid, name = &cfg.name, "{}", &s);
+                tracing::debug!("{}", &s);
             }
 
             if !cfg.redirect_output || cfg.output_dir.is_empty() {

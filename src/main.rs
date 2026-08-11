@@ -24,7 +24,7 @@ struct Args {
 async fn main() {
     // logger::setup();
 
-    let log_buf = logger::LogBuffer::new(100);
+    let log_buf = logger::LogBuffer::new(512);
 
     tracing::info!("starting ...");
 

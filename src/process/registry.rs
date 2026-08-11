@@ -189,6 +189,9 @@ impl Registry {
     }
 
     pub fn set_state(&self, name: &str, state: ProcState) {
+        let worker_span = tracing::span!(tracing::Level::TRACE, "worker", name = name);
+        let _enter = worker_span.enter();
+
         let mut registry = self.inner.lock().unwrap();
         if let Some(entry) = registry.get_mut(name) {
             entry.state = state.clone();

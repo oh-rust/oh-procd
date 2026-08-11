@@ -62,15 +62,13 @@ struct BufferLayer {
     pub counter: AtomicU64,
 }
 
+use tracing_subscriber::fmt::FormattedFields;
+
 impl<S> Layer<S> for BufferLayer
 where
-    S: tracing::Subscriber,
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
         // let msg = format!("{:?}", event);
         // self.buffer.push(msg);
 
@@ -87,19 +85,72 @@ where
         // 2. 调用 record 处理 event 里的所有字段
         event.record(&mut visitor);
 
+        // span 信息
+        let mut span_string = String::new();
+
+        if let Some(scope) = ctx.event_scope(event) {
+            for span in scope {
+                if let Some(fields) = span
+                    .extensions()
+                    .get::<FormattedFields<tracing_subscriber::fmt::format::DefaultFields>>()
+                {
+                    if !span_string.is_empty() {
+                        span_string.push(' ');
+                    }
+
+                    span_string.push_str(span.name());
+
+                    if !fields.is_empty() {
+                        span_string.push('{');
+                        span_string.push_str(fields);
+                        span_string.push('}');
+                    }
+                }
+            }
+        }
+
         // 3. 拼接元数据（级别、目标等）
         let metadata = event.metadata();
         let human_readable_msg = format!(
-            "[{}] {} [{}] {}: {}",
+            "[{}] {} [{}] {} {}: {}",
             count,
             now,
             metadata.level().to_string(),
+            strip_ansi_codes(&span_string),
             metadata.target(),
             fields_string
         );
 
         self.buffer.push(human_readable_msg);
     }
+}
+
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // ANSI CSI: ESC [ ... command
+            if chars.peek() == Some(&'[') {
+                chars.next();
+
+                while let Some(c) = chars.next() {
+                    // ANSI 命令结束字符
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+
+            continue;
+        }
+
+        result.push(c);
+    }
+
+    result
 }
 
 // 初始化日志，在配置读取前，使日志能输出

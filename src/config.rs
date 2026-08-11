@@ -35,7 +35,7 @@ pub struct Config {
     pub restart_delay: Option<Duration>, // 文件变化后，延迟重启的时间间隔
 
     #[serde(default = "default_true")]
-    pub enable_sandbox: bool, // 是否进入沙盒以安全运行,若为false，则所有子进程都为 false
+    pub enable_sandbox: bool, // 是否进入沙盒以安全运行,若为 false，则所有子进程都为 false
 
     #[serde(default)]
     pub auto_chmod_x: Option<bool>, // 是否自动检查二进制有可执行权限
@@ -87,7 +87,7 @@ impl SandboxConfig {
 
 #[derive(Serialize, Debug, Deserialize, Clone)]
 pub struct ProcessConfig {
-    pub name: String,
+    pub name: String, // 名称，必填，唯一
 
     pub cmd: String, // 程序命令，必填
 
@@ -252,6 +252,9 @@ impl ProcessConfig {
     }
 
     pub fn get_cmd(&self) -> std::process::Command {
+        // let worker_span = tracing::span!(tracing::Level::TRACE, "worker", name = self.name);
+        // let _enter = worker_span.enter();
+
         self.try_chmod_x();
         let mut args = self.sandbox.clone();
         args.push(self.cmd.clone());
@@ -293,13 +296,14 @@ impl ProcessConfig {
         if !self.auto_chmod_x.unwrap_or(false) {
             return;
         }
-        if !self.cmd.starts_with("./") {
+        if !self.cmd.starts_with("./") && !self.cmd.starts_with("../") {
             return;
         }
         let ap = self.cmd_abs_path();
         if ap.is_err() {
             return;
         }
+
         let apt = ap.unwrap();
         match fs::permission::ensure_executable(apt.clone()) {
             Ok(_) => {

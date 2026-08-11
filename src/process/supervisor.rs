@@ -41,6 +41,9 @@ fn kill_process(pid: u32) {
 }
 
 fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
+    let worker_span = tracing::span!(tracing::Level::TRACE, "worker", name = pcfg.name);
+    let _enter = worker_span.enter();
+
     let mut cmd = pcfg.get_cmd();
     #[cfg(unix)]
     {
@@ -80,7 +83,7 @@ fn spawn_process(pcfg: &ProcessConfig) -> anyhow::Result<std::process::Child> {
             child
         }
         Result::Err(e) => {
-            let msg = format!("spawn_process [ {:?} ] faild: {:?}", cmd, e);
+            let msg = format!("spawn_process [ {:?} ] failed: {:?}", cmd, e);
             tracing::error!("{}", msg);
             return Err(anyhow::Error::new(e).context(msg));
         }
@@ -110,7 +113,7 @@ fn setup_memory_limit(name: &str, mem_limit_mb: u32) -> std::io::Result<()> {
 }
 
 pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
-    let worker_span = tracing::span!(tracing::Level::INFO, "worker", name = cfg.name);
+    let worker_span = tracing::span!(tracing::Level::TRACE, "worker", name = cfg.name);
     let _enter = worker_span.enter();
 
     let (tx, mut rx) = mpsc::channel::<ControlMsg>(8);
@@ -142,7 +145,7 @@ pub async fn supervise(cfg: ProcessConfig, registry: Arc<Registry>) {
         let pid = child.id();
         registry.set_running(&cfg.name, pid);
 
-        let span1 = tracing::span!(parent:&worker_span,tracing::Level::INFO,"pid",pid);
+        let span1 = tracing::span!(parent:&worker_span,tracing::Level::TRACE,"pid",pid);
         let _enter1 = span1.enter();
 
         tracing::info!("running");
